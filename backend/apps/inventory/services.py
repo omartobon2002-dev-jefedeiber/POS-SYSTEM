@@ -238,8 +238,9 @@ class InventoryService:
         variant.save(update_fields=["average_cost", "last_purchase_cost", "updated_at"])
 
 
+@transaction.atomic
 def record_initial_stock(*, organization, location, lines, user=None, note="Initial stock"):
-    return InventoryService.apply_movements(
+    movements = InventoryService.apply_movements(
         organization=organization,
         location=location,
         lines=lines,
@@ -248,6 +249,27 @@ def record_initial_stock(*, organization, location, lines, user=None, note="Init
         source_type="initial",
         reason=note,
     )
+
+    # The opening balance is the only cost a product has until its first
+    # purchase is received, so a unit cost given here has to reach the variant
+    # — otherwise it would sit on the movement row and the catalogue would keep
+    # reporting no cost at all (and every margin with it). Adjustments
+    # deliberately do NOT do this: losing three units does not restate what the
+    # remaining ones cost.
+    costed = {
+        line.variant_id: line for line in lines if line.unit_cost is not None and line.quantity > 0
+    }
+    if costed:
+        variants = ProductVariant.objects.filter(pk__in=costed).select_for_update()
+        for variant in variants:
+            line = costed[str(variant.pk)]
+            InventoryService.update_average_cost(
+                variant=variant,
+                incoming_quantity=line.quantity,
+                unit_cost=line.unit_cost,
+            )
+
+    return movements
 
 
 def record_adjustment(*, organization, location, lines, user=None, reason="", allow_negative=False):

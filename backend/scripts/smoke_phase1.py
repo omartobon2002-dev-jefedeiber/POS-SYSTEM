@@ -66,7 +66,7 @@ loc_a = locs["results"][0]["id"]
 
 print("\n[2] Catalog: product with variants")
 _, prod = call("POST", "/products/", token_a, body={
-    "name": "Nike Air Max", "tax_rate": "19.00",
+    "name": "Nike Air Max",
     "variants": [
         {"sku": f"NAM-38-BLK-{suffix}", "barcode": f"770{suffix}01", "size": "38", "color": "Black", "price": "459900.00"},
         {"sku": f"NAM-39-BLK-{suffix}", "barcode": f"770{suffix}02", "size": "39", "color": "Black", "price": "459900.00"},

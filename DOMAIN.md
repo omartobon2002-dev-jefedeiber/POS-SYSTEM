@@ -34,12 +34,23 @@ person it creates, since email + password is the only sign-in form the client
 implements. The password lives here, because it is the same in every business.
 
 ### Organization
-The tenant. Holds business configuration directly (currency, timezone,
-`prices_include_tax`, `default_tax_rate`) instead of a separate settings table —
-it is one row per tenant and splitting it would only add a join.
+The tenant. Holds business configuration directly — currency, timezone, tax,
+fiscal contact, DIAN resolution and receipt settings — instead of a separate
+settings table: it is one row per tenant and splitting it would only add a join.
+Nothing of this is kept client-side; the server is the only source of truth.
+
+**Tax is configured here and nowhere else.** `charges_tax` answers "does this
+business sell with IVA?", and `tax_rate` is the rate it sells at. Products carry
+no rate of their own. `Organization.effective_tax_rate` is the single accessor
+every sale goes through: it returns `tax_rate`, or zero when `charges_tax` is
+off. Switching the tax off leaves `tax_rate` untouched, so turning it back on
+restores the configured rate.
+
+`tax_regime` (Responsable de IVA / No responsable / Régimen Simple) is the DIAN
+standing printed on the receipt. It is a label, never an input to the maths.
 
 Colombian defaults: `country=CO`, `currency=COP`, `currency_decimals=0`,
-`prices_include_tax=True`, `default_tax_rate=19`.
+`charges_tax=True`, `tax_rate=19`, `tax_regime=RESPONSABLE_IVA`.
 
 ### Membership
 Binds a user to an organization, and carries that person's identity *inside* it:
@@ -70,10 +81,12 @@ movement, cash session and sale carries it anyway.
 
 ### Product
 The commercial concept — "Nike Air Max". **Never sold, never stocked.** Holds
-name, description, category, brand, `tax_rate`, `track_inventory` and `image`.
+name, description, category, brand, `track_inventory` and `image`.
 
-`tax_rate` sits on Product rather than Variant: size 39 and size 40 of the same
-shoe are never taxed differently.
+A product carries no tax rate: IVA is a property of the business, not of the
+shoe (see Organization). A shop selling some goods taxed and others exempt is
+not modelled — that would be an exception on top of the business rate, not a
+mandatory field on every product.
 
 `image` is one photo, not a gallery per colour or per variant — a small shop
 photographs a garment once, and that is what staff and customers need to
@@ -288,7 +301,8 @@ statuses that count as revenue. Cancelled sales never do.
 ### SaleItem
 Snapshots the product at the moment of sale — `description`, `sku`, `tax_rate`,
 `unit_cost` — so a receipt stays readable and a margin stays fixed after the
-catalogue changes.
+catalogue changes. `tax_rate` here is the business's rate frozen at that
+instant: changing it (or turning IVA off) never rewrites what was already sold.
 
 `refunded_quantity` is materialised and guarded by a check constraint
 (`refunded_quantity <= quantity`).

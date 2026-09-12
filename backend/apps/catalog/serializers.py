@@ -25,9 +25,6 @@ class BrandSerializer(TenantModelSerializer):
 class ProductVariantSerializer(TenantModelSerializer):
     display_name = serializers.CharField(read_only=True)
     product_name = serializers.CharField(source="product.name", read_only=True)
-    tax_rate = serializers.DecimalField(
-        source="product.tax_rate", max_digits=5, decimal_places=2, read_only=True
-    )
 
     class Meta:
         model = ProductVariant
@@ -44,7 +41,6 @@ class ProductVariantSerializer(TenantModelSerializer):
             "price",
             "average_cost",
             "last_purchase_cost",
-            "tax_rate",
             "weight_grams",
             "is_active",
             "created_at",
@@ -53,7 +49,12 @@ class ProductVariantSerializer(TenantModelSerializer):
 
 
 class NestedVariantSerializer(TenantModelSerializer):
-    """Variants written inline when creating a product."""
+    """Variants written inline when creating a product.
+
+    Cost is exposed read-only: the catalogue list is where margins are read, and
+    without it every product came back looking like it had no cost at all. It is
+    never writable here — the server derives it from receipts (decision D3).
+    """
 
     id = serializers.UUIDField(required=False)
 
@@ -67,9 +68,12 @@ class NestedVariantSerializer(TenantModelSerializer):
             "color",
             "attributes",
             "price",
+            "average_cost",
+            "last_purchase_cost",
             "weight_grams",
             "is_active",
         ]
+        read_only_fields = ["average_cost", "last_purchase_cost"]
 
 
 MAX_PHOTO_SIZE = 4 * 1024 * 1024  # Under DATA_UPLOAD_MAX_MEMORY_SIZE (5MB), so
@@ -110,7 +114,6 @@ class ProductSerializer(TenantModelSerializer):
             "category_name",
             "brand",
             "brand_name",
-            "tax_rate",
             "track_inventory",
             "is_active",
             "image",

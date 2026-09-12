@@ -75,6 +75,44 @@ def test_tax_is_extracted_from_the_inclusive_price(tenant_a, make_stocked_varian
     assert Decimal(response.data["tax_total"]) == Decimal("19000.00")
 
 
+def test_a_business_that_does_not_charge_tax_sells_without_it(
+    tenant_a, make_stocked_variant, client_for, sell
+):
+    """Turning IVA off makes the whole price the taxable base — no tax line at all."""
+    variant = make_stocked_variant(tenant_a, quantity=5, price="119000.00")
+    tenant_a.org.charges_tax = False
+    tenant_a.org.save(update_fields=["charges_tax"])
+    client = client_for(tenant_a.owner, tenant_a.org)
+
+    response = sell(client, [{"variant": str(variant.pk), "quantity": 1}])
+
+    item = response.data["items"][0]
+    assert Decimal(item["tax_amount"]) == Decimal("0.00")
+    assert Decimal(item["taxable_base"]) == Decimal("119000.00")
+    assert Decimal(response.data["tax_total"]) == Decimal("0.00")
+    # The customer still pays the shelf price: the rate governs the split, not the total.
+    assert Decimal(response.data["total"]) == Decimal("119000.00")
+
+
+def test_the_business_rate_governs_the_split(tenant_a, make_stocked_variant, client_for, sell):
+    """The rate comes from the organization, not from the product."""
+    variant = make_stocked_variant(tenant_a, quantity=5, price="105000.00")
+    tenant_a.org.tax_rate = Decimal("5")
+    tenant_a.org.save(update_fields=["tax_rate"])
+    client = client_for(tenant_a.owner, tenant_a.org)
+
+    response = sell(
+        client,
+        [{"variant": str(variant.pk), "quantity": 1}],
+        payments=[{"method": "CASH", "amount": "105000.00"}],
+    )
+
+    item = response.data["items"][0]
+    assert Decimal(item["tax_rate"]) == Decimal("5.00")
+    assert Decimal(item["taxable_base"]) == Decimal("100000.00")
+    assert Decimal(item["tax_amount"]) == Decimal("5000.00")
+
+
 def test_a_stale_client_total_is_rejected(tenant_a, make_stocked_variant, client_for, sell):
     """An offline till working from an old price list must not sell at that price."""
     variant = make_stocked_variant(tenant_a, quantity=5, price="119000.00")

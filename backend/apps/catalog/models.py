@@ -69,11 +69,6 @@ class Product(TenantScopedModel):
     brand = models.ForeignKey(
         Brand, on_delete=models.SET_NULL, null=True, blank=True, related_name="products"
     )
-    # Tax lives on the product, not the variant: a size 39 and a size 40 of the
-    # same shoe are never taxed differently in practice.
-    tax_rate = models.DecimalField(
-        max_digits=5, decimal_places=2, default=19, validators=[MinValueValidator(0)]
-    )
     track_inventory = models.BooleanField(
         default=True, help_text="False for services or made-to-order items."
     )

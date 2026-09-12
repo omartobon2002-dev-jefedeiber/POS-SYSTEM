@@ -139,7 +139,6 @@ class SyncPullSerializer(serializers.Serializer):
                 "name": product.name,
                 "category": str(product.category_id) if product.category_id else None,
                 "brand": str(product.brand_id) if product.brand_id else None,
-                "tax_rate": str(product.tax_rate),
                 "track_inventory": product.track_inventory,
                 "is_active": product.is_active,
             }

@@ -197,6 +197,16 @@ business.
 | PATCH | `/organization/settings/` | `organization.manage` |
 | CRUD | `/locations/` | read `organization.read` · write `organization.manage` |
 
+`PATCH /organization/settings/` is where the whole business configuration is
+edited — including tax. `charges_tax` (bool) says whether the business sells
+with IVA and `tax_rate` (0–100) is the rate; every sale is computed from those
+two and from nothing else. `tax_regime` is the DIAN label printed on receipts.
+The same payload carries the fiscal contact (`phone`, `address`, `city`), the
+DIAN resolution fields and the receipt settings (`receipt_footer`,
+`receipt_paper_width`), so no client needs to keep a local copy of any of it.
+The full object also rides along on every session response, so a terminal has
+the current configuration the moment it logs in.
+
 There is no `/organizations/` collection under this prefix: `/organization/` is
 always the one the session token names. The businesses *you* belong to are at
 `/auth/organizations/`, which lists memberships, not organizations — there is
@@ -215,7 +225,7 @@ Staff live under `/employees/` and `/invitations/` — see
 `POST /products/` accepts nested variants:
 
 ```json
-{"name": "Nike Air Max", "tax_rate": "19.00",
+{"name": "Nike Air Max",
  "variants": [
    {"sku": "NAM-38-BLK", "barcode": "7701234567", "size": "38", "color": "Black", "price": "459900.00"},
    {"sku": "NAM-39-BLK", "barcode": "7701234568", "size": "39", "color": "Black", "price": "459900.00"}

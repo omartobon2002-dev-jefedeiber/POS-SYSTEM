@@ -216,6 +216,13 @@ Prices are **tax-inclusive** (Colombian retail convention) — what's shown on
 the shelf is what's charged; the tax breakdown is informational, not
 additive.
 
+Tax comes from the business, never from the product: read `charges_tax` and
+`tax_rate` off the organization on the session. When `charges_tax` is false,
+show no tax line at all rather than an IVA of zero. A cart preview may compute
+the split locally for display, but the persisted numbers are always the
+server's — and on a reprint, use the `tax_breakdown` the sale carries, not the
+business's current rate, or an old sale will be shown with today's IVA.
+
 ---
 
 ## 5. Domain flows to implement

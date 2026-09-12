@@ -57,8 +57,12 @@ class _Line:
     tax_amount: Decimal
 
 
-def _build_lines(raw_lines) -> list[_Line]:
-    """Recompute every line on the server. Client-sent totals are never trusted."""
+def _build_lines(raw_lines, *, tax_rate: Decimal) -> list[_Line]:
+    """Recompute every line on the server. Client-sent totals are never trusted.
+
+    `tax_rate` is the selling business's own rate (zero when it does not charge
+    IVA at all): tax is a per-business setting, never a per-product one.
+    """
     lines: list[_Line] = []
     for raw in raw_lines:
         variant = raw["variant"]
@@ -76,7 +80,6 @@ def _build_lines(raw_lines) -> list[_Line]:
                 "A line discount cannot exceed the line total.", variant=str(variant.pk)
             )
 
-        tax_rate = variant.product.tax_rate
         base, tax = split_tax_from_gross(gross, tax_rate)
         lines.append(
             _Line(
@@ -147,7 +150,7 @@ class SaleService:
             raise InvalidOperation("A sale needs at least one item.")
 
         occurred_at = occurred_at or timezone.now()
-        built = _build_lines(lines)
+        built = _build_lines(lines, tax_rate=organization.effective_tax_rate)
 
         subtotal = money(sum(line.unit_price * line.quantity for line in built))
         discount_total = money(sum(line.discount_amount for line in built))

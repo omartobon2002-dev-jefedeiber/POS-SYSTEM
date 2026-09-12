@@ -8,7 +8,12 @@ import pytest
 from apps.core.context import tenant_context
 from apps.core.exceptions import InsufficientStock
 from apps.inventory.models import MovementType, StockDiscrepancy, StockLevel
-from apps.inventory.services import InventoryService, MovementLine
+from apps.inventory.services import (
+    InventoryService,
+    MovementLine,
+    record_adjustment,
+    record_initial_stock,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -104,6 +109,68 @@ def test_moving_average_cost_follows_the_purchases(tenant_a, make_variant):
     variant.refresh_from_db()
     assert variant.average_cost == Decimal("150.00")
     assert variant.last_purchase_cost == Decimal("200.00")
+
+
+def test_initial_stock_seeds_the_cost_of_a_product_with_no_purchases_yet(tenant_a, make_variant):
+    """The opening balance is the only cost there is until the first receipt."""
+    variant = make_variant(tenant_a)
+
+    with tenant_context(tenant_a.org.pk):
+        record_initial_stock(
+            organization=tenant_a.org,
+            location=tenant_a.location,
+            lines=[
+                MovementLine(variant_id=str(variant.pk), quantity=10, unit_cost=Decimal("40000.00"))
+            ],
+        )
+
+    variant.refresh_from_db()
+    assert variant.average_cost == Decimal("40000.00")
+    assert variant.last_purchase_cost == Decimal("40000.00")
+
+
+def test_an_adjustment_never_restates_the_cost(tenant_a, make_variant):
+    """Losing three units does not change what the remaining ones cost."""
+    variant = make_variant(tenant_a)
+
+    with tenant_context(tenant_a.org.pk):
+        record_initial_stock(
+            organization=tenant_a.org,
+            location=tenant_a.location,
+            lines=[
+                MovementLine(variant_id=str(variant.pk), quantity=10, unit_cost=Decimal("40000.00"))
+            ],
+        )
+        record_adjustment(
+            organization=tenant_a.org,
+            location=tenant_a.location,
+            lines=[
+                MovementLine(variant_id=str(variant.pk), quantity=-3, unit_cost=Decimal("999.00"))
+            ],
+            reason="Merma",
+        )
+
+    variant.refresh_from_db()
+    assert variant.average_cost == Decimal("40000.00")
+
+
+def test_the_catalogue_reports_the_cost_it_was_given(tenant_a, make_variant, client_for):
+    """Margins are read off the product list, so the cost has to reach it."""
+    variant = make_variant(tenant_a)
+    with tenant_context(tenant_a.org.pk):
+        record_initial_stock(
+            organization=tenant_a.org,
+            location=tenant_a.location,
+            lines=[
+                MovementLine(variant_id=str(variant.pk), quantity=5, unit_cost=Decimal("12500.00"))
+            ],
+        )
+
+    response = client_for(tenant_a.owner, tenant_a.org).get("/api/v1/products/")
+
+    assert response.status_code == 200
+    listed = response.data["results"][0]["variants"][0]
+    assert Decimal(listed["average_cost"]) == Decimal("12500.00")
 
 
 def test_stock_quantity_is_not_writable_through_the_api(tenant_a, make_variant, client_for):

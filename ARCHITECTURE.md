@@ -391,6 +391,7 @@ Recorded events: `sale.created`, `sale.cancelled`, `sale.refunded`,
 | # | Decision | Why | Cost of reversing later |
 |---|---|---|---|
 | D1 | Prices stored tax-inclusive; tax extracted when documenting | Colombian retail convention; the shelf price is the price | Low — one helper in `core/money.py` |
+| D1b | Tax configured once per business (`Organization.charges_tax` + `tax_rate`), never per product | A small shop has one IVA standing, not one per item. A rate on every product was four defaults that could disagree with each other, and the till showed a breakdown the server did not compute | Medium — a per-product override would go on top of the business rate, and old sales already snapshot their own rate |
 | D2 | `Location` modelled from day one | Ledger, cash and sales all carry it. Retrofitting means migrating all history | **Very high** — this is why it exists now |
 | D3 | Moving weighted average cost | Standard in retail, survives out-of-order offline operations; FIFO layers do not | Medium |
 | D4 | Block online, accept offline + discrepancy | Matches what physically happened in the store | Low |
