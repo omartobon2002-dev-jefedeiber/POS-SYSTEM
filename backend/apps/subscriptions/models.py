@@ -7,6 +7,7 @@ a provider (Wompi, Mercado Pago, Stripe) is added later behind the
 """
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -81,16 +82,70 @@ class Subscription(TenantScopedModel):
         return f"{self.organization_id} - {self.plan_id} ({self.status})"
 
     @property
-    def is_usable(self) -> bool:
-        """Whether the tenant may keep operating."""
+    def grants_access(self) -> bool:
+        """Whether the tenant may log in and use the product at all.
+
+        PAST_DUE / CANCELLED / EXPIRED never grant access. ACTIVE and TRIAL
+        require their period/trial end to still be in the future when set.
+        """
+        now = timezone.now()
         if self.status == self.Status.ACTIVE:
+            if self.current_period_end is not None and self.current_period_end <= now:
+                return False
             return True
         if self.status == self.Status.TRIAL:
-            return self.trial_ends_at is None or self.trial_ends_at > timezone.now()
-        # PAST_DUE keeps working: cutting off a store mid-sale over billing is
-        # a product decision, not a technical one. Revisit when billing is live.
-        return self.status == self.Status.PAST_DUE
+            return self.trial_ends_at is None or self.trial_ends_at > now
+        return False
+
+    @property
+    def is_usable(self) -> bool:
+        """Alias of grants_access — kept for existing serializers/clients."""
+        return self.grants_access
+
+
+class SubscriptionPayment(UUIDModel, TimeStampedModel):
+    """Manual SaaS payment recorded by a platform operator."""
+
+    class Method(models.TextChoices):
+        TRANSFER = "TRANSFER", "Transferencia"
+        CASH = "CASH", "Efectivo"
+        OTHER = "OTHER", "Otro"
+
+    organization = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.CASCADE,
+        related_name="subscription_payments",
+    )
+    subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.CASCADE,
+        related_name="payments",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default="COP")
+    paid_at = models.DateTimeField()
+    period_start = models.DateTimeField()
+    period_end = models.DateTimeField()
+    method = models.CharField(max_length=20, choices=Method.choices, default=Method.TRANSFER)
+    reference = models.CharField(max_length=120, blank=True)
+    notes = models.TextField(blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recorded_subscription_payments",
+    )
+
+    class Meta:
+        db_table = "subscription_payments"
+        ordering = ["-paid_at", "-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.organization_id} {self.amount} {self.currency} ({self.paid_at:%Y-%m-%d})"
+
 
 # Module-level alias so drf-spectacular can name this enum in the OpenAPI
 # schema; its override loader cannot traverse into a nested class.
 SUBSCRIPTION_STATUS_CHOICES = Subscription.Status.choices
+PAYMENT_METHOD_CHOICES = SubscriptionPayment.Method.choices

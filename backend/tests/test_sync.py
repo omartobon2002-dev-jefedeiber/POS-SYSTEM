@@ -15,12 +15,20 @@ from apps.synchronization.models import Device, SyncOperation
 pytestmark = pytest.mark.django_db
 
 
-def sale_op(variant, quantity=1, amount="119000.00", operation_id=None):
+def sale_op(variant, quantity=1, amount="119000.00", operation_id=None, customer=None):
+    from apps.customers.models import Customer
+
+    if customer is None:
+        with tenant_context(variant.organization_id):
+            customer = Customer.objects.create(
+                organization=variant.organization, name="Cliente Sync"
+            )
     return {
         "operation_id": operation_id or str(uuid.uuid4()),
         "operation_type": "SALE_CREATE",
         "occurred_at": "2026-08-20T15:00:00Z",
         "payload": {
+            "customer": str(customer.pk if hasattr(customer, "pk") else customer),
             "lines": [{"variant": str(variant.pk), "quantity": quantity}],
             "payments": [{"method": "CASH", "amount": amount}],
         },

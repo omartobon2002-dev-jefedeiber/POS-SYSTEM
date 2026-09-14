@@ -18,20 +18,40 @@ def cashier(tenant_a, make_employee):
     return make_employee(tenant_a, role=Membership.Role.CASHIER, username="cajero")
 
 
-def test_cashier_can_read_but_not_write_the_catalog(cashier, client_for):
+def test_cashier_can_read_and_write_the_catalog_but_not_hire(cashier, client_for):
     client = client_for(cashier)
 
     assert client.get("/api/v1/products/").status_code == 200
-    assert client.post("/api/v1/products/", {"name": "X"}, format="json").status_code == 403
+    created = client.post(
+        "/api/v1/products/",
+        {
+            "name": "Camiseta",
+            "variants": [{"sku": "CAM-001", "price": "45000.00"}],
+        },
+        format="json",
+    )
+    assert created.status_code == 201
+    assert "average_cost" not in created.data["variants"][0]
+
+    hire = client.post(
+        "/api/v1/employees/",
+        {"username": "otro", "first_name": "Otro", "role": "CASHIER"},
+        format="json",
+    )
+    assert hire.status_code == 403
 
 
-def test_cashier_cannot_adjust_inventory_or_manage_users(tenant_a, cashier, make_variant, client_for):
+def test_cashier_can_adjust_inventory_without_setting_cost(tenant_a, cashier, make_variant, client_for):
     variant = make_variant(tenant_a)
     client = client_for(cashier)
 
     adjustment = client.post(
         "/api/v1/inventory/adjustments/",
-        {"lines": [{"variant": str(variant.pk), "quantity": 5}]},
+        {
+            "lines": [
+                {"variant": str(variant.pk), "quantity": 5, "unit_cost": "99999.00"},
+            ]
+        },
         format="json",
     )
     hire = client.post(
@@ -40,8 +60,19 @@ def test_cashier_cannot_adjust_inventory_or_manage_users(tenant_a, cashier, make
         format="json",
     )
 
-    assert adjustment.status_code == 403
+    assert adjustment.status_code == 201
+    assert "unit_cost" not in adjustment.data[0]
     assert hire.status_code == 403
+    variant.refresh_from_db()
+    assert variant.average_cost == 0
+
+
+def test_cashier_lacks_costs_read(cashier):
+    assert cashier.has_capability(caps.PRODUCTS_WRITE)
+    assert cashier.has_capability(caps.INVENTORY_ADJUST)
+    assert not cashier.has_capability(caps.COSTS_READ)
+    assert not cashier.has_capability(caps.REPORTS_READ)
+    assert not cashier.has_capability(caps.PURCHASES_CREATE)
 
 
 def test_owner_can_do_what_the_cashier_cannot(tenant_a, make_variant, client_for):
@@ -67,8 +98,8 @@ def test_the_same_username_is_two_unrelated_people(tenant_a, tenant_b, make_empl
     )
 
     assert in_a.pk != in_b.pk
-    assert in_a.has_capability(caps.INVENTORY_ADJUST)
-    assert not in_b.has_capability(caps.INVENTORY_ADJUST)
+    assert in_a.has_capability(caps.COSTS_READ)
+    assert not in_b.has_capability(caps.COSTS_READ)
     # The password of one never opens the other.
     assert not in_b.user.check_password("ClaveDeA123")
 

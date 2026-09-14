@@ -91,6 +91,11 @@ def test_inventory_valuation_surfaces_negative_stock(
     variant = make_stocked_variant(tenant_a, quantity=1, price="119000.00")
     terminal = device(tenant_a)
     client = client_for(tenant_a.owner, tenant_a.org)
+    from apps.core.context import tenant_context
+    from apps.customers.models import Customer
+
+    with tenant_context(tenant_a.org.pk):
+        customer = Customer.objects.create(organization=tenant_a.org, name="Cliente Report")
     push(
         client,
         terminal,
@@ -99,6 +104,7 @@ def test_inventory_valuation_surfaces_negative_stock(
                 "operation_id": str(uuid.uuid4()),
                 "operation_type": "SALE_CREATE",
                 "payload": {
+                    "customer": str(customer.pk),
                     "lines": [{"variant": str(variant.pk), "quantity": 4}],
                     "payments": [{"method": "CASH", "amount": "476000.00"}],
                 },

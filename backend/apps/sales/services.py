@@ -148,6 +148,8 @@ class SaleService:
     ) -> Sale:
         if not lines:
             raise InvalidOperation("A sale needs at least one item.")
+        if customer is None:
+            raise InvalidOperation("A sale requires a customer.")
 
         occurred_at = occurred_at or timezone.now()
         built = _build_lines(lines, tax_rate=organization.effective_tax_rate)
@@ -300,6 +302,9 @@ class SaleService:
                 "source": source,
             },
         )
+        from apps.notifications.services import schedule_sale_notification
+
+        schedule_sale_notification(organization=organization, sale=sale)
         return sale
 
     @staticmethod

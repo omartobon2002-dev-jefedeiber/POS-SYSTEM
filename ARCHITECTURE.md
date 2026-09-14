@@ -123,8 +123,15 @@ Roles are what users see; **capabilities** are what the code checks.
 ```
 OWNER    → every capability
 MANAGER  → everything except users.manage / organization.manage / subscription.manage
-CASHIER  → products.read, sales.create, cash.*, customers.*, inventory.read
+           (includes costs.read)
+CASHIER  → products.read/write, inventory.read/adjust, sales.create, cash.*,
+           customers.*, sync.push — **not** costs.read, purchases.*, reports.read
 ```
+
+`costs.read` is the gate for seeing and setting unit costs (`average_cost`,
+movement `unit_cost`). Catalogue and stock operations do not require it: a
+cashier can create products and load quantities; the owner completes costs later
+via purchases or `POST /variants/{id}/set-cost/`.
 
 The role is read from the **membership**, not from the person: the same account
 may be an owner here and a cashier next door, and gets exactly the capabilities

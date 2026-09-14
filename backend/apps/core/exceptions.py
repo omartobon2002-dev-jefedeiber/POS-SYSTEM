@@ -62,7 +62,13 @@ class OperationInProgress(DomainError):
 class SubscriptionInactive(DomainError):
     default_message = "This organization's subscription is not active."
     code = "subscription_inactive"
-    status_code = status.HTTP_402_PAYMENT_REQUIRED
+    status_code = status.HTTP_403_FORBIDDEN
+
+
+class OrganizationSuspended(DomainError):
+    default_message = "This organization has been suspended."
+    code = "organization_suspended"
+    status_code = status.HTTP_403_FORBIDDEN
 
 
 class PlanLimitExceeded(DomainError):

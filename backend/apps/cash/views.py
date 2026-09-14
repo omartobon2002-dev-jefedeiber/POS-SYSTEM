@@ -17,6 +17,8 @@ from .serializers import (
     CashSessionSerializer,
     CloseSessionSerializer,
     OpenSessionSerializer,
+    TransferSessionResultSerializer,
+    TransferSessionSerializer,
 )
 from .services import CashService
 
@@ -45,11 +47,12 @@ class CashSessionViewSet(
 
     serializer_class = CashSessionSerializer
     model = CashSession
-    select_related = ("register", "opened_by", "closed_by")
+    select_related = ("register", "opened_by", "closed_by", "previous_session", "superseded_by")
     read_capability = caps.CASH_READ
     write_capability = caps.CASH_OPEN
     capability_overrides = {
         "close": caps.CASH_CLOSE,
+        "transfer": caps.CASH_CLOSE,
         "movements": caps.CASH_MOVEMENT,
     }
     filterset_fields = ["status", "register"]
@@ -80,6 +83,29 @@ class CashSessionViewSet(
             notes=serializer.validated_data.get("notes", ""),
         )
         return Response(CashSessionSerializer(session).data)
+
+    @extend_schema(
+        request=TransferSessionSerializer,
+        responses={200: TransferSessionResultSerializer},
+    )
+    @action(detail=True, methods=["post"])
+    def transfer(self, request, pk=None):
+        """Hand the open drawer to another cashier (same-day continuation)."""
+        serializer = TransferSessionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        closed, opened = CashService.transfer_session(
+            session=self.get_object(),
+            counted_amount=serializer.validated_data["counted_amount"],
+            from_user=request.user,
+            to_user=serializer.validated_data["to_user"],
+            notes=serializer.validated_data.get("notes", ""),
+        )
+        return Response(
+            {
+                "closed_session": CashSessionSerializer(closed).data,
+                "opened_session": CashSessionSerializer(opened).data,
+            }
+        )
 
     @extend_schema(responses={200: None})
     @action(detail=True, methods=["get"])

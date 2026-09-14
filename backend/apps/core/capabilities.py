@@ -19,6 +19,10 @@ USERS_MANAGE = "users.manage"
 PRODUCTS_READ = "products.read"
 PRODUCTS_WRITE = "products.write"
 
+# Costs (margin / valuation). Separate from products.write so a cashier can
+# maintain the catalogue without seeing or setting unit costs.
+COSTS_READ = "costs.read"
+
 # Inventory
 INVENTORY_READ = "inventory.read"
 INVENTORY_ADJUST = "inventory.adjust"
@@ -66,6 +70,7 @@ _MANAGER_CAPABILITIES = frozenset(
         ORGANIZATION_READ,
         PRODUCTS_READ,
         PRODUCTS_WRITE,
+        COSTS_READ,
         INVENTORY_READ,
         INVENTORY_ADJUST,
         SUPPLIERS_READ,
@@ -94,7 +99,9 @@ _CASHIER_CAPABILITIES = frozenset(
     {
         ORGANIZATION_READ,
         PRODUCTS_READ,
+        PRODUCTS_WRITE,
         INVENTORY_READ,
+        INVENTORY_ADJUST,
         SALES_READ,
         SALES_CREATE,
         CUSTOMERS_READ,

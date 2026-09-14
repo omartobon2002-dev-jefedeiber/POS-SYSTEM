@@ -217,13 +217,19 @@ def make_stocked_variant(make_variant):
 
 @pytest.fixture
 def sell():
-    """POST a sale with a fresh idempotency key. Returns the DRF response."""
+    """POST a sale with a fresh idempotency key. Returns the DRF response.
 
-    def _sell(client, lines, payments=None, key=None, **extra):
+    Injects a customer when the caller does not supply one, because every sale
+    must be tied to a customer. Pass ``omit_customer=True`` to exercise the
+    validation error.
+    """
+
+    def _sell(client, lines, payments=None, key=None, omit_customer=False, **extra):
         from decimal import Decimal
 
         from apps.catalog.models import ProductVariant
-        from apps.core.context import unscoped
+        from apps.core.context import tenant_context, unscoped
+        from apps.customers.models import Customer
 
         body = {"lines": lines, **extra}
         if payments is None:
@@ -243,6 +249,17 @@ def sell():
             body["payments"] = [{"method": "CASH", "amount": str(total)}]
         else:
             body["payments"] = payments
+
+        if not omit_customer and "customer" not in body:
+            with unscoped():
+                variant = ProductVariant.objects.get(pk=lines[0]["variant"])
+                org = variant.organization
+            with tenant_context(org.pk):
+                customer = Customer.objects.filter(organization=org, name="Cliente Test").first()
+                if customer is None:
+                    customer = Customer.objects.create(organization=org, name="Cliente Test")
+            body["customer"] = str(customer.pk)
+
         return client.post(
             "/api/v1/sales/",
             body,

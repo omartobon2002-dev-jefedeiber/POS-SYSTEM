@@ -16,11 +16,16 @@ from django.db import connection
 from apps.catalog.models import ProductVariant
 from apps.core.context import tenant_context
 from apps.core.exceptions import InsufficientStock
+from apps.customers.models import Customer
 from apps.inventory.services import InventoryService
 from apps.sales.models import Sale
 from apps.sales.services import RefundService, SaleService
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.slow]
+
+
+def _customer(tenant):
+    return Customer.objects.create(organization=tenant.org, name="Cliente Concurrente")
 
 
 def run_in_parallel(worker, count: int):
@@ -43,6 +48,8 @@ def test_two_registers_cannot_sell_the_same_last_unit(tenant_a, make_stocked_var
     """Exactly one sale succeeds and stock lands on zero, never on minus one."""
     variant = make_stocked_variant(tenant_a, quantity=1, price="119000.00")
     org_id = tenant_a.org.pk
+    with tenant_context(org_id):
+        customer = _customer(tenant_a)
 
     def sell_one(_):
         try:
@@ -53,6 +60,7 @@ def test_two_registers_cannot_sell_the_same_last_unit(tenant_a, make_stocked_var
                     lines=[{"variant": ProductVariant.objects.get(pk=variant.pk), "quantity": 1}],
                     payments=[{"method": "CASH", "amount": "119000.00"}],
                     user=tenant_a.owner,
+                    customer=Customer.objects.get(pk=customer.pk),
                 )
             return "sold"
         except InsufficientStock:
@@ -71,6 +79,8 @@ def test_concurrent_sales_never_lose_a_unit(tenant_a, make_stocked_variant):
     """Eight simultaneous sales of one unit each against a stock of eight."""
     variant = make_stocked_variant(tenant_a, quantity=8, price="119000.00")
     org_id = tenant_a.org.pk
+    with tenant_context(org_id):
+        customer = _customer(tenant_a)
 
     def sell_one(_):
         try:
@@ -81,6 +91,7 @@ def test_concurrent_sales_never_lose_a_unit(tenant_a, make_stocked_variant):
                     lines=[{"variant": ProductVariant.objects.get(pk=variant.pk), "quantity": 1}],
                     payments=[{"method": "CASH", "amount": "119000.00"}],
                     user=tenant_a.owner,
+                    customer=Customer.objects.get(pk=customer.pk),
                 )
             return "sold"
         except InsufficientStock:
@@ -106,6 +117,8 @@ def test_opposite_line_order_does_not_deadlock(tenant_a, make_stocked_variant):
     variant_a = make_stocked_variant(tenant_a, quantity=20, price="100000.00", sku="AAA")
     variant_b = make_stocked_variant(tenant_a, quantity=20, price="100000.00", sku="BBB")
     org_id = tenant_a.org.pk
+    with tenant_context(org_id):
+        customer = _customer(tenant_a)
 
     def sell_pair(index):
         order = [variant_a, variant_b] if index % 2 == 0 else [variant_b, variant_a]
@@ -118,6 +131,7 @@ def test_opposite_line_order_does_not_deadlock(tenant_a, make_stocked_variant):
                 ],
                 payments=[{"method": "CASH", "amount": "200000.00"}],
                 user=tenant_a.owner,
+                customer=Customer.objects.get(pk=customer.pk),
             )
         return "sold"
 
@@ -135,12 +149,14 @@ def test_concurrent_refunds_cannot_exceed_what_was_sold(tenant_a, make_stocked_v
     org_id = tenant_a.org.pk
 
     with tenant_context(org_id):
+        customer = _customer(tenant_a)
         sale = SaleService.create_sale(
             organization=tenant_a.org,
             location=tenant_a.location,
             lines=[{"variant": ProductVariant.objects.get(pk=variant.pk), "quantity": 2}],
             payments=[{"method": "CASH", "amount": "238000.00"}],
             user=tenant_a.owner,
+            customer=customer,
         )
         item_id = sale.items.first().pk
 

@@ -10,6 +10,7 @@ from apps.core.health import HealthView
 api_v1 = [
     path("health/", HealthView.as_view(), name="health"),
     path("auth/", include("apps.accounts.urls")),
+    path("platform/", include("apps.platform.urls")),
     path("", include("apps.accounts.employee_urls")),
     path("", include("apps.organizations.urls")),
     path("", include("apps.subscriptions.urls")),
@@ -22,6 +23,7 @@ api_v1 = [
     path("", include("apps.sales.urls")),
     path("", include("apps.synchronization.urls")),
     path("", include("apps.reporting.urls")),
+    path("", include("apps.notifications.urls")),
 ]
 
 urlpatterns = [

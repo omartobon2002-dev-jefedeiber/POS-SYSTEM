@@ -94,7 +94,7 @@ class SaleViewSet(
             lines=data["lines"],
             payments=data["payments"],
             user=request.user,
-            customer=data.get("customer"),
+            customer=data["customer"],
             cash_register=data.get("cash_register"),
             occurred_at=data.get("occurred_at"),
             notes=data.get("notes", ""),

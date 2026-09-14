@@ -168,6 +168,18 @@ opt-in, only needed for the MCP button over a LAN address.
 
 ### Creating the first business
 
+Self-serve signup (`POST /auth/register/`) is **disabled**. Platform operators
+provision tenants from InventorySas → **Acceso operadores**, or via:
+
+```bash
+docker compose exec api python manage.py createsuperuser --email ops@example.com
+# Then open the frontend, “Acceso operadores”, and create the business there.
+```
+
+API surface: `/api/v1/platform/` (staff JWT, `scope: platform`).
+
+Previously (legacy, disabled):
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/auth/register/ \
   -H 'Content-Type: application/json' \

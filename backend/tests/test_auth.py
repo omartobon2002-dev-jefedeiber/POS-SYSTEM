@@ -20,11 +20,7 @@ SELECT = "/api/v1/auth/select-organization/"
 # -- Alta ----------------------------------------------------------------
 
 
-def test_signup_creates_the_person_and_the_business_in_one_step(client, db):
-    from apps.subscriptions.management.commands.seed_plans import seed_plans
-
-    seed_plans()
-
+def test_public_signup_is_disabled(client, db):
     response = client.post(
         "/api/v1/auth/register/",
         {
@@ -35,17 +31,11 @@ def test_signup_creates_the_person_and_the_business_in_one_step(client, db):
         content_type="application/json",
     )
 
-    assert response.status_code == 201
-    body = response.json()
-    assert body["scope"] == "session"
-    assert body["role"] == "OWNER"
-    assert body["organization"]["slug"] == "boutique-iber"
-    assert body["access"] and body["refresh"]
-    # Entra directo: con un solo negocio no hay nada que elegir.
-    assert "organizations" not in body
+    assert response.status_code == 403
+    assert response.json()["code"] == "registration_disabled"
 
 
-def test_signing_up_twice_with_the_same_email_is_refused(tenant_a, client, db):
+def test_signing_up_is_still_disabled_even_with_existing_email(tenant_a, client, db):
     response = client.post(
         "/api/v1/auth/register/",
         {
@@ -56,8 +46,8 @@ def test_signing_up_twice_with_the_same_email_is_refused(tenant_a, client, db):
         content_type="application/json",
     )
 
-    assert response.status_code == 400
-
+    assert response.status_code == 403
+    assert response.json()["code"] == "registration_disabled"
 
 # -- Camino de identidad global (SSO) ------------------------------------
 
@@ -136,14 +126,14 @@ def test_selecting_a_business_you_do_not_belong_to_is_a_404(tenant_a, tenant_b, 
     assert response.status_code == 404
 
 
-def test_opening_a_second_business_needs_no_second_account(tenant_a, client_for):
+def test_opening_a_second_business_from_the_client_is_disabled(tenant_a, client_for):
     client = client_for(tenant_a.owner, tenant_a.org)
 
     response = client.post("/api/v1/auth/organizations/new/", {"name": "Sucursal Norte"}, format="json")
 
-    assert response.status_code == 201
-    assert response.json()["role"] == "OWNER"
-    assert Membership.objects.filter(user=tenant_a.owner).count() == 2
+    assert response.status_code == 403
+    assert response.json()["code"] == "organization_creation_disabled"
+    assert Membership.objects.filter(user=tenant_a.owner).count() == 1
 
 
 # -- Camino de negocio explícito (el mostrador) --------------------------

@@ -10,6 +10,7 @@ from apps.core.serializers import TenantModelSerializer
 from apps.customers.models import Customer
 from apps.organizations.models import Location
 
+from .labels import seller_label
 from .models import Payment, Refund, RefundItem, Sale, SaleItem
 
 
@@ -80,6 +81,7 @@ class RefundSerializer(TenantModelSerializer):
 class SaleListSerializer(TenantModelSerializer):
     customer_name = serializers.CharField(source="customer.name", read_only=True, default=None)
     seller_email = serializers.CharField(source="seller.email", read_only=True, default=None)
+    seller_name = serializers.SerializerMethodField()
     item_count = serializers.IntegerField(read_only=True)
     # Distinct methods only, not per-method amounts - enough to render a
     # payment-method badge in a list without the N+1 of fetching each sale's
@@ -97,6 +99,7 @@ class SaleListSerializer(TenantModelSerializer):
             "customer_name",
             "seller",
             "seller_email",
+            "seller_name",
             "total",
             "refunded_total",
             "item_count",
@@ -105,12 +108,16 @@ class SaleListSerializer(TenantModelSerializer):
         ]
         read_only_fields = fields
 
+    def get_seller_name(self, obj) -> str:
+        return seller_label(obj)
+
 
 class SaleSerializer(TenantModelSerializer):
     items = SaleItemSerializer(many=True, read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
     refunds = RefundSerializer(many=True, read_only=True)
     customer_name = serializers.CharField(source="customer.name", read_only=True, default=None)
+    seller_name = serializers.SerializerMethodField()
     net_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
 
     class Meta:
@@ -123,6 +130,7 @@ class SaleSerializer(TenantModelSerializer):
             "customer",
             "customer_name",
             "seller",
+            "seller_name",
             "cash_session",
             "subtotal",
             "discount_total",
@@ -144,6 +152,9 @@ class SaleSerializer(TenantModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+    def get_seller_name(self, obj) -> str:
+        return seller_label(obj)
 
 
 class SaleLineInputSerializer(serializers.Serializer):
@@ -175,7 +186,7 @@ class SaleCreateSerializer(serializers.Serializer):
         help_text="Optional client-generated id, so an offline terminal keeps the id it printed.",
     )
     location = TenantPrimaryKeyRelatedField(queryset=Location.objects, required=False)
-    customer = TenantPrimaryKeyRelatedField(queryset=Customer.objects, required=False, allow_null=True)
+    customer = TenantPrimaryKeyRelatedField(queryset=Customer.objects, required=True, allow_null=False)
     cash_register = TenantPrimaryKeyRelatedField(
         queryset=CashRegister.objects, required=False, allow_null=True
     )

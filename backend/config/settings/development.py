@@ -27,4 +27,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https?://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$",
     r"^https?://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$",
     r"^https?://172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}(:\d+)?$",
+    # Túneles HTTPS para probar PWA/push en el móvil
+    r"^https://.*\.ngrok(-free)?\.(app|dev|io)$",
+    r"^https://.*\.trycloudflare\.com$",
 ]

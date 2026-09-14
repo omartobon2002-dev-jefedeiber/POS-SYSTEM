@@ -14,11 +14,12 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from apps.core import capabilities as caps
 from apps.core.audit import record_audit
 from apps.core.context import tenant_context
-from apps.core.exceptions import InvalidOperation, SharedIdentity
+from apps.core.exceptions import InvalidOperation, OrganizationSuspended, SharedIdentity, SubscriptionInactive
 from apps.core.permissions import HasCapability, HasOrganization, SubscriptionAllowsWrites
 from apps.organizations.models import Location, Organization
 from apps.organizations.serializers import OrganizationSerializer
 from apps.subscriptions.limits import enforce_limit
+from apps.subscriptions.services import expire_if_needed
 from apps.synchronization.selectors import DEVICE_TOKEN_HEADER, resolve_device
 
 from . import services
@@ -42,6 +43,25 @@ from .serializers import (
     UserSerializer,
 )
 from .tokens import issue_identity_tokens, issue_session_tokens
+
+
+def _ensure_tenant_access(organization) -> None:
+    """Raise if the business is suspended or the subscription does not grant access."""
+    if not organization.is_active:
+        raise OrganizationSuspended(
+            f"The organization {organization.name} has been suspended.",
+        )
+    from apps.subscriptions.models import Subscription
+
+    subscription = Subscription.all_objects.filter(organization=organization).first()
+    if subscription is not None:
+        expire_if_needed(subscription)
+        subscription.refresh_from_db()
+        if not subscription.grants_access:
+            raise SubscriptionInactive(
+                f"The subscription for {organization.name} is {subscription.status.lower()}.",
+                status=subscription.status,
+            )
 
 User = get_user_model()
 
@@ -79,39 +99,22 @@ def identity_payload(user, memberships) -> dict:
 
 
 class RegisterView(APIView):
-    """Alta por cuenta propia: crea la cuenta global y su primer negocio."""
+    """Public self-serve signup is disabled — businesses are provisioned by platform operators."""
 
     permission_classes = [AllowAny]
     authentication_classes: list = []
     throttle_scope = "register"
     serializer_class = RegistrationSerializer
 
-    @extend_schema(request=RegistrationSerializer, responses={201: None})
+    @extend_schema(request=RegistrationSerializer, responses={403: None})
     def post(self, request):
-        serializer = RegistrationSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        with transaction.atomic():
-            user = User.objects.create_user(
-                email=data["email"],
-                password=data["password"],
-                first_name=data.get("first_name", ""),
-                last_name=data.get("last_name", ""),
-                phone=data.get("phone", ""),
-            )
-            from apps.organizations.services import provision_organization
-
-            membership = provision_organization(
-                user=user,
-                name=data["organization_name"],
-                legal_name=data.get("legal_name", ""),
-                tax_id=data.get("tax_id", ""),
-                username=data.get("username") or None,
-            )
-
-        # Entra directo al negocio que acaba de crear: no hay nada que elegir.
-        return Response(session_payload(membership), status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "detail": "El registro público está deshabilitado. Contacta al administrador de la plataforma.",
+                "code": "registration_disabled",
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
 
 class LoginView(APIView):
@@ -141,12 +144,15 @@ class LoginView(APIView):
 
     # -- Caminos 1 y 2: el negocio ya se conoce --------------------------
     def _login_into_organization(self, organization, data):
+        if organization is None:
+            return Response(INVALID_CREDENTIALS, status=status.HTTP_401_UNAUTHORIZED)
         membership = services.find_membership(
             organization=organization, username=data.get("username", "")
         )
         if not services.verify_credentials(membership, password=data.get("password") or None):
             return Response(INVALID_CREDENTIALS, status=status.HTTP_401_UNAUTHORIZED)
 
+        _ensure_tenant_access(membership.organization)
         services.touch(membership)
         return Response(session_payload(membership))
 
@@ -157,9 +163,23 @@ class LoginView(APIView):
             return Response(INVALID_CREDENTIALS, status=status.HTTP_401_UNAUTHORIZED)
 
         memberships = list(services.active_memberships(user))
+        if not memberships:
+            # Credentials are valid but every business is suspended (or none).
+            suspended = Membership.objects.filter(
+                user=user,
+                status=Membership.Status.ACTIVE,
+                organization__is_active=False,
+            ).select_related("organization").first()
+            if suspended is not None:
+                raise OrganizationSuspended(
+                    f"The organization {suspended.organization.name} has been suspended.",
+                )
+            return Response(identity_payload(user, memberships))
+
         # Con un solo negocio no hay nada que elegir: ahorrarle al cliente un
         # viaje redundante es el caso mayoritario, no una optimización.
         if len(memberships) == 1:
+            _ensure_tenant_access(memberships[0].organization)
             services.touch(memberships[0])
             return Response(session_payload(memberships[0]))
         return Response(identity_payload(user, memberships))
@@ -222,6 +242,7 @@ class SelectOrganizationView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        _ensure_tenant_access(membership.organization)
         services.touch(membership)
         return Response(session_payload(membership))
 
@@ -271,30 +292,20 @@ def identity_payload_without_tokens(user) -> dict:
 
 
 class CreateOrganizationView(APIView):
-    """Un negocio más para quien ya tiene cuenta. Esto es lo que hace útil el SSO.
-
-    No exige contexto de tenant: se llega aquí con un token de identidad o con
-    la sesión de otro negocio, y se sale con la sesión del negocio nuevo.
-    """
+    """Self-serve creation of additional businesses is disabled."""
 
     permission_classes = [IsAuthenticated]
     serializer_class = OrganizationCreateSerializer
 
-    @extend_schema(request=OrganizationCreateSerializer, responses={201: None})
+    @extend_schema(request=OrganizationCreateSerializer, responses={403: None})
     def post(self, request):
-        serializer = OrganizationCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        from apps.organizations.services import provision_organization
-
-        membership = provision_organization(
-            user=request.user,
-            name=data["name"],
-            legal_name=data.get("legal_name", ""),
-            tax_id=data.get("tax_id", ""),
+        return Response(
+            {
+                "detail": "Solo un operador de plataforma puede crear negocios.",
+                "code": "organization_creation_disabled",
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
-        return Response(session_payload(membership), status=status.HTTP_201_CREATED)
 
 
 class RefreshView(TokenRefreshView):

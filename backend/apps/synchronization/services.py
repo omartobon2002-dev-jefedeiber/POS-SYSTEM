@@ -155,7 +155,7 @@ def _handle_sale_create(*, organization, device, operation, user):
         lines=data["lines"],
         payments=data["payments"],
         user=user,
-        customer=data.get("customer"),
+        customer=data["customer"],
         cash_register=data.get("cash_register") or device.cash_register,
         occurred_at=data.get("occurred_at") or operation.get("occurred_at"),
         notes=data.get("notes", ""),

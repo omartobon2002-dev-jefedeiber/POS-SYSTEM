@@ -212,7 +212,7 @@ def test_an_oversized_photo_is_rejected():
     assert "image" in serializer.errors
 
 
-def test_a_cashier_cannot_upload_a_product_photo(tenant_a, product, make_employee, client_for):
+def test_a_cashier_can_upload_a_product_photo(tenant_a, product, make_employee, client_for):
     from apps.accounts.models import Membership
 
     cashier = make_employee(tenant_a, role=Membership.Role.CASHIER)
@@ -221,7 +221,8 @@ def test_a_cashier_cannot_upload_a_product_photo(tenant_a, product, make_employe
         f"{PRODUCTS}{product['id']}/photo/", {"image": _image_file()}, format="multipart"
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.data["image"]
 
 
 def test_product_photos_never_cross_tenants(tenant_a, tenant_b, product, client_for):

@@ -62,6 +62,9 @@ class CashSessionSerializer(TenantModelSerializer):
             "expected_amount",
             "counted_amount",
             "difference",
+            "close_reason",
+            "previous_session",
+            "superseded_by",
             "notes",
         ]
         read_only_fields = fields
@@ -76,6 +79,25 @@ class OpenSessionSerializer(serializers.Serializer):
 class CloseSessionSerializer(serializers.Serializer):
     counted_amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
     notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class TransferSessionSerializer(serializers.Serializer):
+    counted_amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    to_user = serializers.UUIDField()
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_to_user(self, value):
+        from apps.accounts.models import User
+
+        try:
+            return User.objects.get(pk=value)
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError("User not found.") from exc
+
+
+class TransferSessionResultSerializer(serializers.Serializer):
+    closed_session = CashSessionSerializer()
+    opened_session = CashSessionSerializer()
 
 
 class CashMovementInputSerializer(serializers.Serializer):

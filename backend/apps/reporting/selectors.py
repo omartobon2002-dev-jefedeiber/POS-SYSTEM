@@ -133,18 +133,30 @@ def margin_report(*, date_from, date_to, location=None) -> dict:
             output_field=MONEY,
         ),
         units=Coalesce(Sum(net_quantity), 0),
+        units_with_cost=Coalesce(
+            Sum(net_quantity, filter=Q(unit_cost__gt=0)),
+            0,
+        ),
     )
 
     revenue = money(totals["revenue"])
     cost = money(totals["cost"])
     profit = money(revenue - cost)
+    units = int(totals["units"] or 0)
+    units_with_cost = int(totals["units_with_cost"] or 0)
     return {
         "period": {"start": date_from, "end": date_to},
-        "units_sold": int(totals["units"] or 0),
+        "units_sold": units,
         "revenue": revenue,
         "cost": cost,
         "gross_profit": profit,
         "margin_percent": money(profit / revenue * 100) if revenue else ZERO,
+        "cost_coverage": {
+            "units_with_cost": units_with_cost,
+            "units_total": units,
+            "percent": money(Decimal(units_with_cost) / Decimal(units) * 100) if units else ZERO,
+            "incomplete": units_with_cost < units,
+        },
     }
 
 
@@ -168,6 +180,10 @@ def inventory_valuation(*, location=None) -> dict:
             ZERO,
             output_field=MONEY,
         ),
+        units_with_cost=Coalesce(
+            Sum("quantity", filter=Q(variant__average_cost__gt=0)),
+            0,
+        ),
     )
 
     negative = list(
@@ -176,8 +192,12 @@ def inventory_valuation(*, location=None) -> dict:
         .values("variant_id", "variant__sku", "location__name", "quantity")[:50]
     )
 
+    units = int(totals["units"] or 0)
+    units_with_cost = int(totals["units_with_cost"] or 0)
+    from apps.catalog.selectors import pending_cost_count
+
     return {
-        "units_on_hand": int(totals["units"] or 0),
+        "units_on_hand": units,
         "cost_value": money(totals["cost_value"]),
         "retail_value": money(totals["retail_value"]),
         "potential_margin": money(totals["retail_value"] - totals["cost_value"]),
@@ -192,6 +212,13 @@ def inventory_valuation(*, location=None) -> dict:
             }
             for row in negative
         ],
+        "cost_coverage": {
+            "units_with_cost": units_with_cost,
+            "units_total": units,
+            "percent": money(Decimal(units_with_cost) / Decimal(units) * 100) if units else ZERO,
+            "incomplete": units_with_cost < units,
+            "variants_pending_cost": pending_cost_count(),
+        },
     }
 
 
@@ -309,6 +336,7 @@ def profit_and_loss(*, date_from, date_to, location=None) -> dict:
         "net_margin_percent": money(net_profit / margin["revenue"] * 100)
         if margin["revenue"]
         else ZERO,
+        "cost_coverage": margin["cost_coverage"],
     }
 
 
@@ -352,6 +380,7 @@ def dashboard(*, date_from, date_to, location=None, top_limit: int = 5) -> dict:
             "cost_value": inventory["cost_value"],
             "retail_value": inventory["retail_value"],
             "negative_stock_count": len(inventory["negative_stock"]),
+            "cost_coverage": inventory["cost_coverage"],
         },
         "top_products": top_products(
             date_from=date_from, date_to=date_to, location=location, limit=top_limit

@@ -15,12 +15,14 @@ from apps.subscriptions.limits import enforce_limit
 
 from .filters import CategoryFilter, ProductFilter, ProductVariantFilter
 from .models import Brand, Category, Product, ProductVariant
+from .selectors import variants_pending_cost
 from .serializers import (
     BrandSerializer,
     CategorySerializer,
     ProductPhotoSerializer,
     ProductSerializer,
     ProductVariantSerializer,
+    SetVariantCostSerializer,
 )
 
 
@@ -163,6 +165,57 @@ class ProductVariantViewSet(ActiveByDefaultMixin, TenantModelViewSet):
             variants=Count("id"), retail_value=Sum("price")
         )
         return Response(totals)
+
+    @extend_schema(
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer"},
+                    "results": {"type": "array", "items": {"type": "object"}},
+                },
+            }
+        }
+    )
+    @action(detail=False, methods=["get"], url_path="pending-cost")
+    def pending_cost(self, request):
+        """Variants the owner still needs to price for margin (costs.read)."""
+        if not request.membership.has_capability(caps.COSTS_READ):
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        queryset = variants_pending_cost()
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response({"count": queryset.count(), "results": serializer.data})
+
+    @extend_schema(request=SetVariantCostSerializer, responses={200: ProductVariantSerializer})
+    @action(detail=True, methods=["post"], url_path="set-cost")
+    def set_cost(self, request, pk=None):
+        """Set average_cost without changing stock quantity (costs.read)."""
+        if not request.membership.has_capability(caps.COSTS_READ):
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        variant = self.get_object()
+        serializer = SetVariantCostSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        unit_cost = serializer.validated_data["unit_cost"]
+        variant.average_cost = unit_cost
+        variant.last_purchase_cost = unit_cost
+        variant.save(update_fields=["average_cost", "last_purchase_cost", "updated_at"])
+        record_audit(
+            organization=request.organization,
+            action="variant.cost_set",
+            actor=request.user,
+            obj=variant,
+            metadata={"unit_cost": str(unit_cost)},
+        )
+        return Response(self.get_serializer(variant).data)
 
     def perform_destroy(self, instance):
         instance.is_active = False

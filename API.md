@@ -221,6 +221,14 @@ Staff live under `/employees/` and `/invitations/` — see
 | CRUD | `/categories/` `/brands/` `/products/` `/variants/` | read `products.read` · write `products.write` |
 | POST/DELETE | `/products/{id}/photo/` | `products.write` — the product's one photo |
 | GET | `/variants/lookup/?barcode=` | `products.read` — POS scan; falls back to exact SKU |
+| GET | `/variants/pending-cost/` | `costs.read` — active variants with stock/sales but `average_cost = 0` |
+| POST | `/variants/{id}/set-cost/` | `costs.read` — `{ "unit_cost": "12500.00" }` sets average + last purchase cost without changing quantity |
+
+`average_cost` / `last_purchase_cost` on catalogue responses, and `unit_cost` on
+inventory movements, are omitted unless the membership has `costs.read`. Cashiers
+may create products and load stock (`products.write` + `inventory.adjust`) but
+cannot see or set costs; any `unit_cost` they send on initial-stock/adjustments
+is ignored.
 
 `POST /products/` accepts nested variants:
 
@@ -336,13 +344,14 @@ adjustment.
 POST /api/v1/sales/
 Idempotency-Key: 8f14e45f-ceea-467a-9c1e-1b2c3d4e5f60
 
-{"customer": "<uuid|null>",
+{"customer": "<uuid>",
  "cash_register": "<uuid|null>",
  "expected_total": "238000.00",
  "lines": [{"variant": "<uuid>", "quantity": 2, "discount_amount": "0"}],
  "payments": [{"method": "CASH", "amount": "250000.00"}]}
 ```
 
+- `customer` is required — every sale must be tied to a customer.
 - Every total is recomputed server-side. Whatever the client sends as
   `total`/`subtotal` is ignored.
 - `expected_total` is optional; if it disagrees with the server, the sale is
@@ -389,8 +398,9 @@ refund while any session is open in the organization.
 |---|---|---|
 | CRUD | `/cash/registers/` | read `cash.read` · write `organization.manage` |
 | GET | `/cash/sessions/` `/cash/sessions/{id}/` | `cash.read` |
-| POST | `/cash/sessions/` | `cash.open` — opens a shift |
-| POST | `/cash/sessions/{id}/close/` | `cash.close` — arqueo |
+| POST | `/cash/sessions/` | `cash.open` — opens a shift (once per register per local day) |
+| POST | `/cash/sessions/{id}/close/` | `cash.close` — arqueo (end of day / end of shift) |
+| POST | `/cash/sessions/{id}/transfer/` | `cash.close` — handoff to another cashier |
 | GET | `/cash/sessions/{id}/summary/` | `cash.read` |
 | GET/POST | `/cash/sessions/{id}/movements/` | `cash.movement` |
 | GET | `/cash/movements/` | `cash.read` |
@@ -398,6 +408,8 @@ refund while any session is open in the organization.
 ```json
 POST /api/v1/cash/sessions/        {"register": "<uuid>", "opening_amount": "100000.00"}
 POST /api/v1/cash/sessions/{id}/close/  {"counted_amount": "95000.00", "notes": "Faltante"}
+POST /api/v1/cash/sessions/{id}/transfer/
+  {"counted_amount": "180000.00", "to_user": "<user-uuid>", "notes": "Cambio de turno"}
 POST /api/v1/cash/sessions/{id}/movements/  {"movement_type": "WITHDRAWAL", "amount": "30000.00"}
 ```
 
@@ -405,6 +417,12 @@ Amounts on movements are always positive; `movement_type` gives the direction.
 Closing returns `expected_amount`, `counted_amount` and `difference`
 (positive = surplus). `summary/` adds totals by movement type and by payment
 method, so card and transfer are visible without polluting the drawer.
+
+A register can only be opened once per calendar day (org timezone). Reopening
+after a normal close returns `409 register_already_used_today`. To continue
+with another cashier the same day, use `transfer/`: it closes the current
+session with `close_reason=TRANSFER` and opens a successor with
+`opening_amount = counted_amount` for `to_user` (active member with `cash.open`).
 
 ### Expenses
 Operating spend only — rent, payroll, utilities, the delivery paid out of the
@@ -526,6 +544,23 @@ costs that weigh most.
 Margins use the cost frozen on each sale line, so a report about a past period
 does not move when later purchases change the average cost. Units are net of
 refunds.
+
+`margin`, `profit`, and `inventory-valuation` (plus the dashboard copies of
+those blocks) include `cost_coverage`:
+
+```json
+{
+  "units_with_cost": 8,
+  "units_total": 10,
+  "percent": "80.00",
+  "incomplete": true,
+  "variants_pending_cost": 2
+}
+```
+
+(`variants_pending_cost` only on inventory valuation / dashboard inventory.)
+When cashiers load stock without a cost, the owner completes it via
+`/variants/pending-cost/` + `set-cost` (or purchases); sales stay unblocked.
 
 ### Subscription
 | Method | Path | Capability |

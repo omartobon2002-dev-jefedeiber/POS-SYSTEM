@@ -49,6 +49,16 @@ class TopProductSerializer(serializers.Serializer):
     revenue = MoneyField()
 
 
+class CostCoverageSerializer(serializers.Serializer):
+    """How much of the margin/valuation is backed by a real unit cost."""
+
+    units_with_cost = serializers.IntegerField()
+    units_total = serializers.IntegerField()
+    percent = MoneyField()
+    incomplete = serializers.BooleanField()
+    variants_pending_cost = serializers.IntegerField(required=False)
+
+
 class MarginSerializer(serializers.Serializer):
     period = PeriodSerializer()
     units_sold = serializers.IntegerField()
@@ -56,6 +66,7 @@ class MarginSerializer(serializers.Serializer):
     cost = MoneyField()
     gross_profit = MoneyField()
     margin_percent = MoneyField()
+    cost_coverage = CostCoverageSerializer()
 
 
 class NegativeStockSerializer(serializers.Serializer):
@@ -72,6 +83,7 @@ class InventoryValuationSerializer(serializers.Serializer):
     potential_margin = MoneyField()
     variants_tracked = serializers.IntegerField()
     negative_stock = NegativeStockSerializer(many=True)
+    cost_coverage = CostCoverageSerializer()
 
 
 class CashSessionRowSerializer(serializers.Serializer):
@@ -131,6 +143,7 @@ class ProfitSerializer(serializers.Serializer):
     expenses_by_category = ExpenseCategoryTotalSerializer(many=True)
     net_profit = MoneyField()
     net_margin_percent = MoneyField()
+    cost_coverage = CostCoverageSerializer()
 
 
 class DashboardInventorySerializer(serializers.Serializer):
@@ -138,6 +151,7 @@ class DashboardInventorySerializer(serializers.Serializer):
     cost_value = MoneyField()
     retail_value = MoneyField()
     negative_stock_count = serializers.IntegerField()
+    cost_coverage = CostCoverageSerializer()
 
 
 class DashboardSerializer(serializers.Serializer):

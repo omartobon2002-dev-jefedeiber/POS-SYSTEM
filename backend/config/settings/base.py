@@ -44,6 +44,8 @@ LOCAL_APPS = [
     "apps.sales",
     "apps.synchronization",
     "apps.reporting",
+    "apps.platform",
+    "apps.notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -223,6 +225,11 @@ CORS_EXPOSE_HEADERS = ["Idempotent-Replay"]
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@pos.local")
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173").rstrip("/")
 INVITATION_TTL_DAYS = env.int("INVITATION_TTL_DAYS", default=7)
+
+# Web Push (VAPID). Leave empty to disable sale notifications until configured.
+VAPID_PUBLIC_KEY = env("VAPID_PUBLIC_KEY", default="")
+VAPID_PRIVATE_KEY = env("VAPID_PRIVATE_KEY", default="")
+VAPID_SUBJECT = env("VAPID_SUBJECT", default="mailto:admin@example.com")
 
 LOGGING = {
     "version": 1,

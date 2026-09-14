@@ -2,23 +2,13 @@ from __future__ import annotations
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.core import capabilities as caps
 from apps.core.permissions import HasCapability, HasOrganization
 
-from .models import Plan, Subscription
-from .serializers import PlanSerializer, SubscriptionSerializer
-
-
-class PlanViewSet(viewsets.ReadOnlyModelViewSet):
-    """The plan catalogue is platform-level, identical for every tenant."""
-
-    serializer_class = PlanSerializer
-    queryset = Plan.objects.filter(is_active=True)
-    permission_classes = [IsAuthenticated]
-    pagination_class = None
+from .models import Subscription
+from .serializers import SubscriptionSerializer
 
 
 class CurrentSubscriptionViewSet(viewsets.ViewSet):

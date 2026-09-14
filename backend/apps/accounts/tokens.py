@@ -9,6 +9,9 @@ contra una membresía ACTIVA en cada request (ver apps.core.authentication), de
 modo que suspender a un empleado surte efecto de inmediato sin esperar a que
 el token caduque.
 
+El *token de plataforma* identifica a un operador staff sin membresías; no
+abre endpoints de negocio.
+
 simplejwt copia los claims personalizados del refresh al access que emite
 (`RefreshToken.access_token` solo excluye exp/jti/token_type), así que refrescar
 conserva la organización sin código adicional.
@@ -23,6 +26,7 @@ MEMBERSHIP_CLAIM = "membership"
 
 IDENTITY_SCOPE = "identity"
 SESSION_SCOPE = "session"
+PLATFORM_SCOPE = "platform"
 
 
 def issue_identity_tokens(user) -> dict[str, str]:
@@ -43,4 +47,11 @@ def issue_session_tokens(membership) -> dict[str, str]:
     refresh[ORGANIZATION_CLAIM] = str(membership.organization_id)
     refresh[MEMBERSHIP_CLAIM] = str(membership.pk)
     refresh["role"] = membership.role
+    return {"refresh": str(refresh), "access": str(refresh.access_token)}
+
+
+def issue_platform_tokens(user) -> dict[str, str]:
+    """Access/refresh for a platform operator (no organization claim)."""
+    refresh = RefreshToken.for_user(user)
+    refresh[SCOPE_CLAIM] = PLATFORM_SCOPE
     return {"refresh": str(refresh), "access": str(refresh.access_token)}

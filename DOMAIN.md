@@ -106,8 +106,8 @@ The sellable, stockable unit.
 | `size`, `color` | explicit columns — the two axes fashion retail reports on |
 | `attributes` | JSONB for the long tail: material, season, fit |
 | `price` | **tax-inclusive** shelf price (D1) |
-| `average_cost` | moving weighted average, recomputed on purchase receipt (D3) |
-| `last_purchase_cost` | informational |
+| `average_cost` | moving weighted average, recomputed on purchase receipt (D3); may stay `0` until the owner completes it via a purchase or `set-cost` |
+| `last_purchase_cost` | informational; same deferred-cost rule |
 | `weight_grams`, `is_active` | |
 
 ```
@@ -230,6 +230,12 @@ counted, and the `difference` between them (positive = surplus).
 
 A partial unique index enforces **one open session per register**.
 
+A register may be **opened at most once per local calendar day** (organization
+timezone). After a normal close, it cannot be reopened the same day. The
+exception is a **cashier handoff** (`POST …/transfer/`): the outgoing cashier
+does an intermediate arqueo (`close_reason=TRANSFER`) and a new session opens
+for the incoming cashier with that counted float.
+
 ### CashMovement
 Signed money in or out of the drawer, append-only:
 `OPENING · SALE · REFUND · WITHDRAWAL · DEPOSIT · ADJUSTMENT`.
@@ -287,7 +293,7 @@ this model did.
 | Field | Note |
 |---|---|
 | `number` | consecutive per location, assigned at completion |
-| `location`, `seller`, `customer` | customer is optional |
+| `location`, `seller`, `customer` | customer is required on create |
 | `cash_session` | set when the sale was taken on a register with an open shift |
 | `subtotal`, `discount_total`, `tax_total`, `total` | all recomputed server-side |
 | `paid_total`, `change_amount` | change is only possible against cash |

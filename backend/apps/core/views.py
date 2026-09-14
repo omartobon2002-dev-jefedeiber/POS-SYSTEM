@@ -4,7 +4,7 @@ from rest_framework import viewsets
 from rest_framework.response import Response
 
 from .idempotency import IDEMPOTENCY_HEADER, ReplayedResponse, idempotent
-from .permissions import HasCapability, HasOrganization, SubscriptionAllowsWrites
+from .permissions import HasCapability, HasOrganization, SubscriptionGrantsAccess
 
 
 class TenantViewSetMixin:
@@ -14,7 +14,7 @@ class TenantViewSetMixin:
     capability check and injects the organization on write.
     """
 
-    permission_classes = [HasOrganization, HasCapability, SubscriptionAllowsWrites]
+    permission_classes = [HasOrganization, HasCapability, SubscriptionGrantsAccess]
     read_capability: str | None = None
     write_capability: str | None = None
     capability_overrides: dict[str, str] = {}

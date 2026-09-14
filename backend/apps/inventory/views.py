@@ -117,11 +117,14 @@ class _InventoryWriteViewSet(IdempotentActionMixin, TenantViewSetMixin, viewsets
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Cashiers can load stock without costs.read; never let a forged
+        # unit_cost reach the ledger or average_cost in that case.
+        allow_cost = request.membership.has_capability(caps.COSTS_READ)
         lines = [
             MovementLine(
                 variant_id=str(line["variant"].pk),
                 quantity=line["quantity"],
-                unit_cost=line.get("unit_cost"),
+                unit_cost=line.get("unit_cost") if allow_cost else None,
                 note=line.get("note", ""),
             )
             for line in data["lines"]
@@ -155,7 +158,7 @@ class _InventoryWriteViewSet(IdempotentActionMixin, TenantViewSetMixin, viewsets
         )
 
         return Response(
-            InventoryMovementSerializer(movements, many=True).data,
+            InventoryMovementSerializer(movements, many=True, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
 

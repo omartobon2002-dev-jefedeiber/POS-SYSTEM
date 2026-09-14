@@ -3,6 +3,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from apps.catalog.models import ProductVariant
+from apps.core.costs import can_see_costs
 from apps.core.fields import TenantPrimaryKeyRelatedField
 from apps.core.serializers import TenantModelSerializer
 from apps.organizations.models import Location
@@ -56,6 +57,12 @@ class InventoryMovementSerializer(TenantModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not can_see_costs(self.context.get("request")):
+            data.pop("unit_cost", None)
+        return data
 
 
 class StockDiscrepancySerializer(TenantModelSerializer):

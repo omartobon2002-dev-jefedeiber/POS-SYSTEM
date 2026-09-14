@@ -3,9 +3,24 @@ from __future__ import annotations
 from django.db import transaction
 from rest_framework import serializers
 
+from apps.core.costs import can_see_costs
 from apps.core.serializers import TenantModelSerializer
 
 from .models import Brand, Category, Product, ProductVariant
+
+_COST_FIELDS = ("average_cost", "last_purchase_cost")
+
+
+class CostAwareMixin:
+    """Drop cost fields from the representation when the actor lacks costs.read."""
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if not can_see_costs(request):
+            for field in _COST_FIELDS:
+                data.pop(field, None)
+        return data
 
 
 class CategorySerializer(TenantModelSerializer):
@@ -22,7 +37,7 @@ class BrandSerializer(TenantModelSerializer):
         read_only_fields = ["id", "created_at"]
 
 
-class ProductVariantSerializer(TenantModelSerializer):
+class ProductVariantSerializer(CostAwareMixin, TenantModelSerializer):
     display_name = serializers.CharField(read_only=True)
     product_name = serializers.CharField(source="product.name", read_only=True)
 
@@ -48,12 +63,12 @@ class ProductVariantSerializer(TenantModelSerializer):
         read_only_fields = ["id", "average_cost", "last_purchase_cost", "created_at"]
 
 
-class NestedVariantSerializer(TenantModelSerializer):
+class NestedVariantSerializer(CostAwareMixin, TenantModelSerializer):
     """Variants written inline when creating a product.
 
-    Cost is exposed read-only: the catalogue list is where margins are read, and
-    without it every product came back looking like it had no cost at all. It is
-    never writable here — the server derives it from receipts (decision D3).
+    Cost is exposed read-only when the actor has costs.read: the catalogue list
+    is where margins are read. It is never writable here — the server derives
+    it from receipts or the set-cost action (decision D3).
     """
 
     id = serializers.UUIDField(required=False)
@@ -74,6 +89,12 @@ class NestedVariantSerializer(TenantModelSerializer):
             "is_active",
         ]
         read_only_fields = ["average_cost", "last_purchase_cost"]
+
+
+class SetVariantCostSerializer(serializers.Serializer):
+    """Owner/manager completes a deferred unit cost without changing stock qty."""
+
+    unit_cost = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
 
 
 MAX_PHOTO_SIZE = 4 * 1024 * 1024  # Under DATA_UPLOAD_MAX_MEMORY_SIZE (5MB), so

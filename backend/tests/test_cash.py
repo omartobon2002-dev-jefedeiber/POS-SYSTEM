@@ -95,6 +95,10 @@ def test_withdrawals_and_deposits_move_the_expected_balance(tenant_a, open_regis
 
     with tenant_context(tenant_a.org.pk):
         assert CashService.expected_amount(session) == Decimal("75000.00")
+        summary = CashService.session_summary(session)
+    assert summary["total_withdrawals"] == Decimal("30000.00")
+    assert summary["total_deposits"] == Decimal("5000.00")
+    assert summary["total_sales_cash"] == Decimal("0.00")
 
 
 def test_closing_computes_the_difference(tenant_a, open_register, client_for):
@@ -241,3 +245,117 @@ def test_cash_sessions_never_cross_tenants(tenant_a, tenant_b, open_register, cl
     assert client_b.get("/api/v1/cash/sessions/").data["count"] == 0
     with tenant_context(tenant_b.org.pk):
         assert CashSession.objects.count() == 0
+
+
+def test_a_register_cannot_be_reopened_the_same_day(tenant_a, open_register, client_for):
+    """After a normal close, the till stays closed until the next local day."""
+    register, session = open_register(tenant_a, opening_amount="100000.00")
+    client = client_for(tenant_a.owner, tenant_a.org)
+
+    closed = client.post(
+        f"/api/v1/cash/sessions/{session.pk}/close/",
+        {"counted_amount": "100000.00"},
+        format="json",
+    )
+    assert closed.status_code == 200
+    assert closed.data["close_reason"] == "NORMAL"
+
+    again = client.post(
+        "/api/v1/cash/sessions/",
+        {"register": str(register.pk), "opening_amount": "50000.00"},
+        format="json",
+    )
+    assert again.status_code == 409
+    assert again.data["code"] == "register_already_used_today"
+
+
+def test_a_register_can_open_again_the_next_day(tenant_a, open_register):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    register, session = open_register(tenant_a, opening_amount="100000.00")
+
+    with tenant_context(tenant_a.org.pk):
+        CashService.close_session(
+            session=session, counted_amount="100000.00", user=tenant_a.owner
+        )
+        session.refresh_from_db()
+        yesterday = timezone.now() - timedelta(days=1)
+        CashSession.objects.filter(pk=session.pk).update(
+            opened_at=yesterday, closed_at=yesterday
+        )
+
+        next_day = CashService.open_session(
+            organization=tenant_a.org,
+            register=register,
+            user=tenant_a.owner,
+            opening_amount="80000.00",
+        )
+        assert next_day.status == CashSession.Status.OPEN
+        assert next_day.opening_amount == Decimal("80000.00")
+
+
+def test_transferring_a_session_hands_the_drawer_to_another_cashier(
+    tenant_a, make_employee, open_register, client_for, make_stocked_variant, sell
+):
+    register, session = open_register(tenant_a, opening_amount="100000.00")
+    cashier = make_employee(tenant_a, username="caja2")
+    client = client_for(tenant_a.owner, tenant_a.org)
+    variant = make_stocked_variant(tenant_a, quantity=5, price="119000.00")
+    sell(
+        client,
+        [{"variant": str(variant.pk), "quantity": 1}],
+        cash_register=str(register.pk),
+    )
+
+    response = client.post(
+        f"/api/v1/cash/sessions/{session.pk}/transfer/",
+        {
+            "counted_amount": "219000.00",
+            "to_user": str(cashier.user_id),
+            "notes": "Cambio de turno",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+    closed = response.data["closed_session"]
+    opened = response.data["opened_session"]
+    assert closed["status"] == "CLOSED"
+    assert closed["close_reason"] == "TRANSFER"
+    assert str(closed["superseded_by"]) == opened["id"]
+    assert opened["status"] == "OPEN"
+    assert str(opened["opened_by"]) == str(cashier.user_id)
+    assert Decimal(opened["opening_amount"]) == Decimal("219000.00")
+    assert str(opened["previous_session"]) == closed["id"]
+
+    # Sales continue on the successor session.
+    sell(
+        client,
+        [{"variant": str(variant.pk), "quantity": 1}],
+        cash_register=str(register.pk),
+    )
+    with tenant_context(tenant_a.org.pk):
+        successor = CashSession.objects.get(pk=opened["id"])
+        assert CashService.expected_amount(successor) == Decimal("338000.00")
+
+
+def test_transfer_rejects_a_closed_session(tenant_a, make_employee, open_register, client_for):
+    _, session = open_register(tenant_a, opening_amount="50000.00")
+    cashier = make_employee(tenant_a, username="otro")
+    client = client_for(tenant_a.owner, tenant_a.org)
+
+    client.post(
+        f"/api/v1/cash/sessions/{session.pk}/close/",
+        {"counted_amount": "50000.00"},
+        format="json",
+    )
+
+    response = client.post(
+        f"/api/v1/cash/sessions/{session.pk}/transfer/",
+        {"counted_amount": "50000.00", "to_user": str(cashier.user_id)},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert response.data["code"] == "invalid_operation"

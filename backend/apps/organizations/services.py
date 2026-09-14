@@ -49,25 +49,32 @@ def derive_username(*, organization, user, preferred: str | None = None) -> str:
 
 @transaction.atomic
 def provision_organization(
-    *, user, name: str, legal_name: str = "", tax_id: str = "", username: str | None = None
+    *,
+    user,
+    name: str,
+    legal_name: str = "",
+    tax_id: str = "",
+    username: str | None = None,
+    plan=None,
+    plan_code: str | None = None,
+    months: int = 1,
+    trial_days: int | None = None,
+    use_trial: bool = True,
 ):
     """Crea un negocio con todo lo necesario para usarlo de inmediato.
 
     Un tenant nunca queda a medio construir: la membresía de dueño, una sede
-    por defecto, una caja y una suscripción de prueba se crean en la misma
-    transacción que la organización.
+    por defecto, una caja y una suscripción se crean en la misma transacción
+    que la organización.
 
-    `user` llega ya guardado. Puede ser alguien que acaba de registrarse o
-    alguien que ya tiene otros negocios: en ambos casos lo que se crea aquí es
-    una membresía más, nunca una cuenta nueva.
-
-    Devuelve la membresía de dueño; la organización está en `.organization`.
+    Por defecto (`use_trial=True`) abre un trial de 14 días — legado del
+    self-serve. Los operadores de plataforma pasan `use_trial=False` (o
+    `trial_days`) para provisionar con periodo ACTIVE pagado.
     """
     from apps.accounts.models import Membership
 
     organization = Organization.objects.create(name=name, legal_name=legal_name, tax_id=tax_id)
 
-    # Las escrituras tenant-scoped exigen un contexto activo por diseño.
     with tenant_context(organization.pk):
         location = Location.objects.create(
             organization=organization,
@@ -96,18 +103,28 @@ def provision_organization(
 
         from apps.expenses.models import ExpenseCategory
 
-        # Un negocio nuevo debe poder registrar un gasto sin configurar nada
-        # primero; son editables y desactivables como cualquier otra fila.
         ExpenseCategory.objects.bulk_create(
             [
-                ExpenseCategory(organization=organization, name=name)
-                for name in DEFAULT_EXPENSE_CATEGORIES
+                ExpenseCategory(organization=organization, name=cat_name)
+                for cat_name in DEFAULT_EXPENSE_CATEGORIES
             ]
         )
 
-        from apps.subscriptions.services import start_trial_subscription
+        from apps.subscriptions.services import start_active_subscription, start_trial_subscription
 
-        start_trial_subscription(organization=organization)
+        if use_trial and trial_days is None:
+            start_trial_subscription(
+                organization=organization,
+                plan_code=plan_code or "BASIC",
+            )
+        else:
+            start_active_subscription(
+                organization=organization,
+                plan=plan,
+                plan_code=plan_code or "BASIC",
+                months=months,
+                trial_days=trial_days,
+            )
 
         record_audit(
             organization=organization,

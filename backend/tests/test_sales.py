@@ -359,3 +359,27 @@ def test_sales_never_cross_tenants(tenant_a, tenant_b, make_stocked_variant, cli
     # And B cannot sell A's stock through a nested id either.
     blocked = sell(client_b, [{"variant": str(variant_a.pk), "quantity": 1}])
     assert blocked.status_code == 400
+
+
+def test_a_sale_requires_a_customer(tenant_a, make_stocked_variant, client_for, sell):
+    variant = make_stocked_variant(tenant_a, quantity=5, price="119000.00")
+    client = client_for(tenant_a.owner, tenant_a.org)
+
+    response = sell(client, [{"variant": str(variant.pk), "quantity": 1}], omit_customer=True)
+
+    assert response.status_code == 400
+    assert "customer" in response.data
+
+
+def test_sale_response_includes_seller_name(tenant_a, make_stocked_variant, client_for, sell):
+    tenant_a.owner.first_name = "Ana"
+    tenant_a.owner.last_name = "Caja"
+    tenant_a.owner.save(update_fields=["first_name", "last_name"])
+    variant = make_stocked_variant(tenant_a, quantity=5, price="119000.00")
+    client = client_for(tenant_a.owner, tenant_a.org)
+
+    response = sell(client, [{"variant": str(variant.pk), "quantity": 1}])
+
+    assert response.status_code == 201, response.data
+    assert response.data["seller_name"] == "Ana Caja"
+    assert response.data["customer_name"]

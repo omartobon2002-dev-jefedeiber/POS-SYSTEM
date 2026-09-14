@@ -40,6 +40,10 @@ class CashSession(TenantScopedModel):
         OPEN = "OPEN", "Open"
         CLOSED = "CLOSED", "Closed"
 
+    class CloseReason(models.TextChoices):
+        NORMAL = "NORMAL", "Normal close"
+        TRANSFER = "TRANSFER", "Handed off to another cashier"
+
     register = models.ForeignKey(CashRegister, on_delete=models.PROTECT, related_name="sessions")
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
 
@@ -61,6 +65,26 @@ class CashSession(TenantScopedModel):
     expected_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     counted_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     difference = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    # Blank while OPEN; set on close. TRANSFER allows a same-day reopen for the next cashier.
+    close_reason = models.CharField(
+        max_length=10, choices=CloseReason.choices, blank=True, default=""
+    )
+    # When this shift was opened via a handoff, points at the session that was transferred.
+    previous_session = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="successor_sessions",
+    )
+    # When closed via TRANSFER, points at the session that took over.
+    superseded_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supersedes",
+    )
 
     notes = models.TextField(blank=True)
 
@@ -123,3 +147,4 @@ class CashMovement(TenantScopedModel):
 # Module-level alias so drf-spectacular can name this enum in the OpenAPI
 # schema; its override loader cannot traverse into a nested class.
 CASH_SESSION_STATUS_CHOICES = CashSession.Status.choices
+CASH_SESSION_CLOSE_REASON_CHOICES = CashSession.CloseReason.choices

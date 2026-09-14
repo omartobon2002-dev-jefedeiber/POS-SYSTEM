@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
-from .exceptions import SubscriptionInactive
+from .exceptions import OrganizationSuspended, SubscriptionInactive
 
 
 class HasOrganization(BasePermission):
@@ -25,8 +25,6 @@ class HasCapability(BasePermission):
     message = "Your role does not allow this action."
 
     def has_permission(self, request, view):
-        # Las capacidades salen del rol dentro de este negocio, no de la
-        # persona: la misma cuenta puede ser dueña aquí y cajera al lado.
         membership = getattr(request, "membership", None)
         if membership is None:
             return False
@@ -47,33 +45,57 @@ class HasCapability(BasePermission):
         return getattr(view, "write_capability", None)
 
 
-class SubscriptionAllowsWrites(BasePermission):
-    """Blocks writes once a subscription is cancelled or expired.
+class SubscriptionGrantsAccess(BasePermission):
+    """Hard-blocks every tenant request when the subscription does not grant access.
 
-    Reads stay open on purpose: a store that stops paying must still be able to
-    get its own data out. PAST_DUE also keeps writing - cutting a shop off
-    mid-sale over billing is a product decision nobody has made (see
-    Subscription.is_usable).
+    Replaces the old writes-only gate: unpaid / expired shops cannot read or
+    write until a platform operator records a payment (or reactivates them).
     """
 
     def has_permission(self, request, view):
-        if request.method in SAFE_METHODS:
-            return True
-
         organization = getattr(request, "organization", None)
         if organization is None:
-            return True  # HasOrganization already rejected this request.
+            return True
+
+        if not organization.is_active:
+            raise OrganizationSuspended(
+                f"The organization {organization.name} has been suspended.",
+            )
 
         subscription = getattr(request, "_subscription", None)
         if subscription is None:
             from apps.subscriptions.models import Subscription
+            from apps.subscriptions.services import expire_if_needed
 
-            subscription = Subscription.objects.filter(organization=organization).first()
+            subscription = Subscription.all_objects.filter(organization=organization).first()
+            if subscription is not None:
+                subscription = expire_if_needed(subscription)
             request._subscription = subscription
 
-        if subscription is not None and not subscription.is_usable:
+        if subscription is not None and not subscription.grants_access:
             raise SubscriptionInactive(
                 f"The subscription for {organization.name} is {subscription.status.lower()}.",
                 status=subscription.status,
             )
         return True
+
+
+# Backwards-compatible name used by older imports / docs.
+SubscriptionAllowsWrites = SubscriptionGrantsAccess
+
+
+class IsPlatformStaff(BasePermission):
+    """Platform operators: is_staff, no tenant memberships."""
+
+    message = "Platform operator access required."
+
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return False
+        if not getattr(user, "is_staff", False):
+            return False
+        # Platform operators are never members of a business.
+        from apps.accounts.models import Membership
+
+        return not Membership.objects.filter(user=user).exists()

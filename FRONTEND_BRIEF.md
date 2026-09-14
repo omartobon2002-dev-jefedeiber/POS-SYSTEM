@@ -125,11 +125,16 @@ or email. Show that as an explanation, not as an error the owner can retry.
 ### Authorization is a UI hint, not a guarantee
 
 `capabilities` is a flat list of strings (`sales.create`, `inventory.adjust`,
-`cash.close`, …). Use it to decide what to show or enable. **Never treat its
+`costs.read`, `cash.close`, …). Use it to decide what to show or enable. **Never treat its
 absence as the only enforcement** — the server checks again on every write
 and returns 403 regardless of what the frontend rendered. Design every write
 flow to handle a 403 gracefully (it can legitimately happen: another admin
 just changed this user's role in another tab).
+
+Cashiers have `products.write` and `inventory.adjust` but **not** `costs.read`:
+hide cost columns / wizard cost fields and never send `unit_cost`. Owners with
+`costs.read` see a pending-cost banner (`GET /variants/pending-cost/`) and can
+complete costs with `POST /variants/{id}/set-cost/`.
 
 A request touching another tenant's resource returns **404, not 403** — the
 API deliberately does not distinguish "doesn't exist" from "exists but not
