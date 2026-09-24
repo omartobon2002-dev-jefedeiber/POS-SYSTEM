@@ -164,7 +164,7 @@ handle specifically, not just show generically:
 | `idempotency_key_required` | 400 | Only happens if the frontend forgot to send the header — treat as a bug, not a user-facing error |
 | `idempotency_conflict` | 409 | The same key was reused with a different payload — a client bug (a stale key was reused); regenerate the key |
 | `operation_in_progress` | 409 | An identical request is still being processed — safe to retry shortly with the *same* key |
-| `subscription_inactive` | 402 | Block writes, keep reads working, point the user at billing |
+| `subscription_inactive` | 403 | The business is locked out entirely (reads and writes) until a platform operator records a payment — sign the user out and explain why |
 | `plan_limit_exceeded` | 402 | Block the create, point at plan upgrade — `context` carries the resource and the limit |
 | `invalid_credentials` | 401 | Only from login. Wrong slug, wrong username or wrong secret — deliberately indistinguishable |
 | `username_taken` | 409 | Only from creating an employee: that username is already used *in this business* |

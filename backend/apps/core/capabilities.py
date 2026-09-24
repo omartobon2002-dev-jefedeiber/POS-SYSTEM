@@ -38,6 +38,9 @@ SALES_READ = "sales.read"
 SALES_CREATE = "sales.create"
 SALES_CANCEL = "sales.cancel"
 SALES_REFUND = "sales.refund"
+# Selling a line at a price other than the catalogue's. Line discounts stay
+# open to cashiers; replacing the shelf price outright does not.
+SALES_OVERRIDE_PRICE = "sales.override_price"
 
 # Customers
 CUSTOMERS_READ = "customers.read"
@@ -81,6 +84,7 @@ _MANAGER_CAPABILITIES = frozenset(
         SALES_CREATE,
         SALES_CANCEL,
         SALES_REFUND,
+        SALES_OVERRIDE_PRICE,
         CUSTOMERS_READ,
         CUSTOMERS_WRITE,
         EXPENSES_READ,

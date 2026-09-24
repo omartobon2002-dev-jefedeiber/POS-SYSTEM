@@ -102,6 +102,7 @@ class CashService:
         return session
 
     @staticmethod
+    @transaction.atomic
     def record_movement(
         *,
         session: CashSession,
@@ -112,6 +113,9 @@ class CashService:
         source_id: str = "",
         note: str = "",
     ) -> CashMovement:
+        # Re-read under lock: close_session locks the same row, so a sale that
+        # races the arqueo either lands before it or is refused, never after.
+        session = CashSession.objects.select_for_update().get(pk=session.pk)
         if not session.is_open:
             raise InvalidOperation("The cash session is closed.", session=str(session.pk))
         amount = money(amount)

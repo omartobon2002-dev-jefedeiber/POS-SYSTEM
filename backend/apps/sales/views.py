@@ -100,6 +100,7 @@ class SaleViewSet(
             notes=data.get("notes", ""),
             expected_total=data.get("expected_total"),
             sale_id=data.get("id"),
+            allow_price_override=request.membership.has_capability(caps.SALES_OVERRIDE_PRICE),
         )
         return Response(
             SaleSerializer(self.get_queryset().get(pk=sale.pk)).data, status=status.HTTP_201_CREATED

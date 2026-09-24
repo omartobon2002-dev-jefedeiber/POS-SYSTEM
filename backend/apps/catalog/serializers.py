@@ -24,10 +24,20 @@ class CostAwareMixin:
 
 
 class CategorySerializer(TenantModelSerializer):
+    parent_name = serializers.CharField(source="parent.name", read_only=True, default=None)
+    product_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Category
-        fields = ["id", "name", "parent", "is_active", "created_at"]
+        fields = ["id", "name", "parent", "parent_name", "is_active", "product_count", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+    def get_product_count(self, obj) -> int:
+        # Annotated on list/retrieve (CategoryViewSet); counted on a fresh write.
+        annotated = getattr(obj, "product_count", None)
+        if annotated is not None:
+            return annotated
+        return obj.products.filter(is_active=True).count()
 
 
 class BrandSerializer(TenantModelSerializer):

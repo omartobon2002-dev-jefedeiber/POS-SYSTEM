@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -33,6 +33,12 @@ class CategoryViewSet(TenantModelViewSet):
     write_capability = caps.PRODUCTS_WRITE
     filterset_class = CategoryFilter
     search_fields = ["name"]
+    select_related = ("parent",)
+
+    def get_queryset(self):
+        return super().get_queryset().annotate(
+            product_count=Count("products", filter=Q(products__is_active=True), distinct=True)
+        )
 
 
 class BrandViewSet(TenantModelViewSet):

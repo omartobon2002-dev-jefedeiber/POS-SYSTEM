@@ -268,7 +268,7 @@ money if they break:
 | `tests/test_concurrency.py` | **`slow`** — two registers on one unit, eight parallel sales, reversed lock order, simultaneous refunds |
 | `tests/test_sync.py` | Replaying an offline operation changes nothing; offline sales are accepted without stock and flagged; one bad operation does not sink the batch |
 | `tests/test_reporting.py` | Margins use the cost frozen at sale time; refunds are netted out |
-| `tests/test_subscription_gating.py` | A lapsed subscription blocks writes, never reads |
+| `tests/test_subscription_gating.py` | A lapsed subscription blocks reads and writes; only ACTIVE/TRIAL grant access |
 
 ```bash
 pytest                 # 191 tests, ~19s

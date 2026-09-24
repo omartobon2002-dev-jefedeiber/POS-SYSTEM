@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from apps.core import capabilities as caps
 from apps.core.audit import record_audit
+from apps.core.params import parse_datetime_param, parse_uuid_param
 from apps.core.views import TenantModelViewSet, TenantViewSetMixin
 from apps.organizations.models import Location
 from apps.organizations.selectors import default_location
@@ -128,6 +129,7 @@ class SyncOperationViewSet(
             device=serializer.validated_data["device"],
             operations=serializer.validated_data["operations"],
             user=request.user,
+            allow_price_override=request.membership.has_capability(caps.SALES_OVERRIDE_PRICE),
         )
         # `accepted` counts work actually done: a duplicate is neither an
         # acceptance nor a failure, it is a no-op the terminal can forget about.
@@ -161,14 +163,8 @@ class SyncPullViewSet(TenantViewSetMixin, viewsets.ViewSet):
         responses={200: SyncPullSerializer},
     )
     def list(self, request):
-        since = request.query_params.get("since")
-        if since:
-            parsed = timezone.datetime.fromisoformat(since.replace("Z", "+00:00"))
-            since = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
-        else:
-            since = None
-
-        location_id = request.query_params.get("location")
+        since = parse_datetime_param(request.query_params.get("since"), "since")
+        location_id = parse_uuid_param(request.query_params.get("location"), "location")
         location = Location.objects.filter(pk=location_id).first() if location_id else None
 
         changes = pull_changes(organization=request.organization, since=since, location=location)

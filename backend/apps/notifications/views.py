@@ -56,7 +56,10 @@ class WebPushSubscriptionView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        sub, _created = WebPushSubscription.objects.update_or_create(
+        # The endpoint is unique platform-wide (one browser, one endpoint), but
+        # the same owner may subscribe from two businesses: look it up unscoped
+        # so the row moves to the current business instead of colliding.
+        sub, _created = WebPushSubscription.all_objects.update_or_create(
             endpoint=data["endpoint"],
             defaults={
                 "organization": request.organization,

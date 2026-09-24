@@ -410,7 +410,7 @@ Recorded events: `sale.created`, `sale.cancelled`, `sale.refunded`,
 | D7 | Sales are immutable | Correction happens through refund or cancellation, both of which leave a trail | High |
 | D8 | `SyncOperation` is its own dedup table | Batch semantics return a result per operation, and sync needs device/payload/failure state | Low |
 | D9 | Reports are queries, not tables | A second copy of the truth is a second thing that can be wrong | Low |
-| D10 | A lapsed subscription blocks writes, never reads | A store that stops paying must still get its own data out | Low |
+| D10 | A lapsed subscription blocks the whole business: login, reads and writes (403 `subscription_inactive`) | Billing is manual through platform operators; a hard gate is the only lever until a payment gateway exists | Low |
 | D11 | A default `CashRegister` is provisioned with the organization; a cash sale with no register is refused only while a session is open somewhere | Cash usable on day one; a client that forgets `cash_register` mid-shift loses money from the arqueo silently otherwise | Low |
 
 ## 15. Security posture
@@ -421,7 +421,7 @@ Recorded events: `sale.created`, `sale.cancelled`, `sale.refunded`,
 | Server-side authorization | `HasCapability`, §4 |
 | Cross-tenant id probing | 404, never 403 — existence is not confirmed |
 | Rate limiting | `register` 5/h, `auth` 10/min, `sync` 60/min, `write` 120/min |
-| Subscription gating | Writes blocked when cancelled or expired (D10) |
+| Subscription gating | Login, reads and writes blocked unless ACTIVE or TRIAL (D10) |
 | Plan limits | `subscriptions.limits.enforce_limit` on users, locations, products |
 | Credential lockout | Per membership, not per person: 5 bad passwords close one till and leave that person's other shops alone |
 | Invitation tokens | Hashed at rest, expiring, revocable; the clear value exists only in the email |

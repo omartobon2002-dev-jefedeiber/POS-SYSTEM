@@ -23,11 +23,13 @@ batch must not roll back the twenty valid ones around it.
 """
 from __future__ import annotations
 
+import uuid
+
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from apps.core.exceptions import DomainError
+from apps.core.exceptions import DomainError, InvalidOperation
 from apps.organizations.selectors import default_location
 from apps.sales.models import Sale
 from apps.sales.serializers import RefundCreateSerializer, SaleCreateSerializer
@@ -38,11 +40,22 @@ from .models import Device, SyncOperation
 
 class SyncService:
     @staticmethod
-    def push(*, organization, device: Device, operations: list[dict], user=None) -> list[dict]:
+    def push(
+        *,
+        organization,
+        device: Device,
+        operations: list[dict],
+        user=None,
+        allow_price_override: bool = True,
+    ) -> list[dict]:
         """Process a batch. Returns one result per operation, in order."""
         results = [
             SyncService.process_one(
-                organization=organization, device=device, operation=operation, user=user
+                organization=organization,
+                device=device,
+                operation=operation,
+                user=user,
+                allow_price_override=allow_price_override,
             )
             for operation in operations
         ]
@@ -52,7 +65,9 @@ class SyncService:
         return results
 
     @staticmethod
-    def process_one(*, organization, device: Device, operation: dict, user=None) -> dict:
+    def process_one(
+        *, organization, device: Device, operation: dict, user=None, allow_price_override: bool = True
+    ) -> dict:
         operation_id = str(operation["operation_id"])
 
         existing = SyncOperation.objects.filter(operation_id=operation_id).first()
@@ -82,7 +97,11 @@ class SyncService:
                     processed_by=user,
                 )
                 record.result = handler(
-                    organization=organization, device=device, operation=operation, user=user
+                    organization=organization,
+                    device=device,
+                    operation=operation,
+                    user=user,
+                    allow_price_override=allow_price_override,
                 )
                 record.save(update_fields=["result", "updated_at"])
         except IntegrityError:
@@ -140,7 +159,7 @@ class SyncService:
         }
 
 
-def _handle_sale_create(*, organization, device, operation, user):
+def _handle_sale_create(*, organization, device, operation, user, allow_price_override=True):
     payload = dict(operation.get("payload") or {})
     payload.setdefault("id", str(operation["operation_id"]))
 
@@ -165,18 +184,24 @@ def _handle_sale_create(*, organization, device, operation, user):
         device_id=device.identifier,
         # Decision D4: the sale already happened in the store.
         allow_negative_stock=True,
+        allow_price_override=allow_price_override,
     )
     return {"sale_id": str(sale.pk), "number": sale.number, "total": str(sale.total)}
 
 
-def _handle_sale_cancel(*, organization, device, operation, user):
+def _handle_sale_cancel(*, organization, device, operation, user, **_):
     payload = operation.get("payload") or {}
-    sale = Sale.objects.get(pk=payload["sale"])
+    # A malformed payload must fail this one operation, not the whole batch:
+    # only DomainError / ValidationError are recorded as FAILED by process_one.
+    try:
+        sale = Sale.objects.get(pk=uuid.UUID(str(payload["sale"])))
+    except (KeyError, ValueError, TypeError, Sale.DoesNotExist):
+        raise InvalidOperation("Unknown or missing sale in the cancel payload.") from None
     cancelled = SaleService.cancel_sale(sale=sale, user=user, reason=payload.get("reason", ""))
     return {"sale_id": str(cancelled.pk), "status": cancelled.status}
 
 
-def _handle_refund_create(*, organization, device, operation, user):
+def _handle_refund_create(*, organization, device, operation, user, **_):
     serializer = RefundCreateSerializer(data=operation.get("payload") or {})
     serializer.is_valid(raise_exception=True)
     data = serializer.validated_data

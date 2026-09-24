@@ -167,8 +167,9 @@ not been made.
 One per organization. `status` TRIAL → ACTIVE → PAST_DUE / CANCELLED / EXPIRED,
 `billing_cycle`, trial and period dates. 14-day trial on signup.
 
-`PAST_DUE` deliberately keeps working: cutting a store off mid-sale over
-billing is a product decision, not a technical one.
+Access is a hard gate: only `ACTIVE` (within its period) and `TRIAL` (before
+`trial_ends_at`) grant it. `PAST_DUE`, `CANCELLED` and `EXPIRED` block login,
+reads and writes until a platform operator records a payment.
 
 `provider` and `external_reference` are empty seams for a future gateway.
 

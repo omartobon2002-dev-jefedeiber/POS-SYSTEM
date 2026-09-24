@@ -45,6 +45,12 @@ class PaymentMismatch(DomainError):
     status_code = 400
 
 
+class PriceOverrideNotAllowed(DomainError):
+    default_message = "Your role cannot sell at a price other than the catalogue's."
+    code = "price_override_not_allowed"
+    status_code = 403
+
+
 @dataclass
 class _Line:
     variant: object
@@ -57,7 +63,7 @@ class _Line:
     tax_amount: Decimal
 
 
-def _build_lines(raw_lines, *, tax_rate: Decimal) -> list[_Line]:
+def _build_lines(raw_lines, *, tax_rate: Decimal, allow_price_override: bool = True) -> list[_Line]:
     """Recompute every line on the server. Client-sent totals are never trusted.
 
     `tax_rate` is the selling business's own rate (zero when it does not charge
@@ -71,8 +77,15 @@ def _build_lines(raw_lines, *, tax_rate: Decimal) -> list[_Line]:
             raise InvalidOperation("Quantity must be at least 1.", variant=str(variant.pk))
 
         # A price may be overridden at the till (haggling is normal in retail),
-        # but the default is always the shelf price from the catalogue.
+        # but the default is always the shelf price from the catalogue, and only
+        # a role holding sales.override_price may replace it.
         unit_price = money(raw.get("unit_price") if raw.get("unit_price") is not None else variant.price)
+        if not allow_price_override and unit_price != money(variant.price):
+            raise PriceOverrideNotAllowed(
+                variant=str(variant.pk),
+                catalogue_price=str(money(variant.price)),
+                requested_price=str(unit_price),
+            )
         discount = money(raw.get("discount_amount") or 0)
         gross = money(unit_price * quantity - discount)
         if gross < 0:
@@ -145,6 +158,7 @@ class SaleService:
         expected_total=None,
         allow_negative_stock: bool = False,
         sale_id=None,
+        allow_price_override: bool = True,
     ) -> Sale:
         if not lines:
             raise InvalidOperation("A sale needs at least one item.")
@@ -152,7 +166,11 @@ class SaleService:
             raise InvalidOperation("A sale requires a customer.")
 
         occurred_at = occurred_at or timezone.now()
-        built = _build_lines(lines, tax_rate=organization.effective_tax_rate)
+        built = _build_lines(
+            lines,
+            tax_rate=organization.effective_tax_rate,
+            allow_price_override=allow_price_override,
+        )
 
         subtotal = money(sum(line.unit_price * line.quantity for line in built))
         discount_total = money(sum(line.discount_amount for line in built))

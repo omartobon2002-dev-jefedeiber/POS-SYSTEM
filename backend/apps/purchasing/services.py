@@ -76,6 +76,9 @@ def receive_purchase(*, purchase: Purchase, user=None, received_at=None) -> Purc
     in one transaction: a received purchase whose stock never arrived, or stock
     with no purchase behind it, must be impossible.
     """
+    # Locked so two concurrent receipts of the same draft cannot both see
+    # DRAFT and write the stock twice.
+    purchase = Purchase.objects.select_for_update().get(pk=purchase.pk)
     if purchase.status != Purchase.Status.DRAFT:
         raise InvalidOperation(
             f"Only a draft purchase can be received (this one is {purchase.status}).",
@@ -142,6 +145,7 @@ def receive_purchase(*, purchase: Purchase, user=None, received_at=None) -> Purc
 @transaction.atomic
 def cancel_purchase(*, purchase: Purchase, user=None, reason: str = "") -> Purchase:
     """Cancel a draft. A received purchase is reversed with an adjustment, not cancelled."""
+    purchase = Purchase.objects.select_for_update().get(pk=purchase.pk)
     if purchase.status != Purchase.Status.DRAFT:
         raise InvalidOperation(
             "Only a draft purchase can be cancelled. A received purchase must be "

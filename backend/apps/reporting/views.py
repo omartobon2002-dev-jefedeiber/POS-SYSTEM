@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core import capabilities as caps
+from apps.core.params import parse_datetime_param, parse_int_param, parse_uuid_param
 from apps.core.permissions import HasCapability, HasOrganization
 from apps.organizations.models import Location
 
@@ -40,18 +40,13 @@ class ReportViewSet(viewsets.ViewSet):
     serializer_class = ReportIndexSerializer
 
     def _period(self, request):
-        def parse(value):
-            if not value:
-                return None
-            parsed = timezone.datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
-
         return selectors.resolve_period(
-            parse(request.query_params.get("from")), parse(request.query_params.get("to"))
+            parse_datetime_param(request.query_params.get("from"), "from"),
+            parse_datetime_param(request.query_params.get("to"), "to"),
         )
 
     def _location(self, request):
-        location_id = request.query_params.get("location")
+        location_id = parse_uuid_param(request.query_params.get("location"), "location")
         return Location.objects.filter(pk=location_id).first() if location_id else None
 
     @extend_schema(parameters=PERIOD_PARAMS, responses={200: SalesSummarySerializer})
@@ -71,7 +66,7 @@ class ReportViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["get"], url_path="top-products")
     def top_products(self, request):
         date_from, date_to = self._period(request)
-        limit = min(int(request.query_params.get("limit", 10)), 100)
+        limit = parse_int_param(request.query_params.get("limit"), "limit", default=10, maximum=100)
         return Response(
             selectors.top_products(
                 date_from=date_from,
@@ -149,7 +144,9 @@ class ReportViewSet(viewsets.ViewSet):
     def dashboard(self, request):
         """Every headline figure of the reports page, in one request."""
         date_from, date_to = self._period(request)
-        top_limit = min(int(request.query_params.get("top_limit", 5)), 50)
+        top_limit = parse_int_param(
+            request.query_params.get("top_limit"), "top_limit", default=5, maximum=50
+        )
         return Response(
             selectors.dashboard(
                 date_from=date_from,

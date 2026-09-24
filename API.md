@@ -160,7 +160,9 @@ One envelope for everything:
 | `already_member` | 409 | That person already works in this business |
 | `shared_identity` | 403 | Personal data of someone who also works elsewhere |
 | `username_taken` | 409 | That username is already used in this business |
-| `subscription_inactive` | 402 | Subscription cancelled or expired — writes blocked, reads still work |
+| `subscription_inactive` | 403 | Subscription past due, cancelled or expired — the business is locked out, reads included |
+| `organization_suspended` | 403 | A platform operator deactivated the business |
+| `price_override_not_allowed` | 403 | A line's `unit_price` differs from the catalogue and the role lacks `sales.override_price` |
 
 Another tenant's row is **404, never 403** — confirming existence would leak it.
 
@@ -356,7 +358,10 @@ Idempotency-Key: 8f14e45f-ceea-467a-9c1e-1b2c3d4e5f60
   `total`/`subtotal` is ignored.
 - `expected_total` is optional; if it disagrees with the server, the sale is
   rejected (409 `price_mismatch`) instead of selling at a stale price.
-- `unit_price` may be sent per line to override the shelf price.
+- `unit_price` may be sent per line to override the shelf price; a price
+  different from the catalogue needs `sales.override_price` (owner, manager),
+  otherwise 403 `price_override_not_allowed`. Line discounts need no extra
+  capability.
 - Discounts are **per line**. A whole-sale discount is applied by the client as
   line discounts, so the tax split stays exact.
 - Payments must cover the total. Overpayment is only allowed against cash and
@@ -568,9 +573,10 @@ When cashiers load stock without a cost, the owner completes it via
 | GET | `/plans/` | authenticated |
 | GET | `/subscription/` | `subscription.read` |
 
-A cancelled or expired subscription returns `402 subscription_inactive` on
-writes. Reads keep working: a store that stops paying must still be able to get
-its own data out. `TRIAL` and `PAST_DUE` write normally.
+Only `ACTIVE` (within its period) and `TRIAL` (before it ends) grant access.
+`PAST_DUE`, `CANCELLED` and `EXPIRED` return `403 subscription_inactive` on
+login and on every business endpoint, reads included, until a platform
+operator records a payment (`POST /platform/organizations/{id}/payments/`).
 
 ## Conventions
 
