@@ -45,6 +45,9 @@ class CashMovementSerializer(TenantModelSerializer):
 class CashSessionSerializer(TenantModelSerializer):
     register_name = serializers.CharField(source="register.name", read_only=True)
     opened_by_email = serializers.CharField(source="opened_by.email", read_only=True, default=None)
+    # Open, but opened on a previous business day: it must be closed before
+    # it takes any more money (see CashSessionStale).
+    is_stale = serializers.SerializerMethodField()
 
     class Meta:
         model = CashSession
@@ -66,14 +69,24 @@ class CashSessionSerializer(TenantModelSerializer):
             "previous_session",
             "superseded_by",
             "notes",
+            "is_stale",
         ]
         read_only_fields = fields
+
+    def get_is_stale(self, obj) -> bool:
+        from .services import is_stale
+
+        return is_stale(obj)
 
 
 class OpenSessionSerializer(serializers.Serializer):
     register = TenantPrimaryKeyRelatedField(queryset=CashRegister.objects)
     opening_amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0, default=0)
     notes = serializers.CharField(required=False, allow_blank=True)
+    reopen = serializers.BooleanField(
+        default=False,
+        help_text="Reopen a register already closed today (a mistaken close). Needs cash.reopen.",
+    )
 
 
 class CloseSessionSerializer(serializers.Serializer):

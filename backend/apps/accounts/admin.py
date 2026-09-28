@@ -3,10 +3,12 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.db.models import Count
 from django.utils.html import format_html
 
+from apps.core.admin import UnscopedRelationsMixin
+
 from .models import Invitation, Membership, User
 
 
-class MembershipInline(admin.TabularInline):
+class MembershipInline(UnscopedRelationsMixin, admin.TabularInline):
     model = Membership
     extra = 0
     fields = ("organization", "username", "role", "status", "default_location", "last_used_at")
@@ -72,7 +74,7 @@ class UserAdmin(BaseUserAdmin):
 
 
 @admin.register(Membership)
-class MembershipAdmin(admin.ModelAdmin):
+class MembershipAdmin(UnscopedRelationsMixin, admin.ModelAdmin):
     list_display = (
         "username",
         "organization",
@@ -109,7 +111,7 @@ class MembershipAdmin(admin.ModelAdmin):
 
 
 @admin.register(Invitation)
-class InvitationAdmin(admin.ModelAdmin):
+class InvitationAdmin(UnscopedRelationsMixin, admin.ModelAdmin):
     list_display = ("email", "organization", "role", "status", "expires_at", "accepted_at")
     list_filter = ("status", "role", "organization")
     search_fields = ("email", "organization__name")

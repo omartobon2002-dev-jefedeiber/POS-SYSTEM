@@ -160,6 +160,8 @@ One envelope for everything:
 | `already_member` | 409 | That person already works in this business |
 | `shared_identity` | 403 | Personal data of someone who also works elsewhere |
 | `username_taken` | 409 | That username is already used in this business |
+| `cash_session_stale` | 409 | The register's open shift is from a previous day — close it (arqueo) first |
+| `register_already_used_today` | 409 | The register was already opened and closed today |
 | `subscription_inactive` | 403 | Subscription past due, cancelled or expired — the business is locked out, reads included |
 | `organization_suspended` | 403 | A platform operator deactivated the business |
 | `price_override_not_allowed` | 403 | A line's `unit_price` differs from the catalogue and the role lacks `sales.override_price` |
@@ -428,6 +430,17 @@ after a normal close returns `409 register_already_used_today`. To continue
 with another cashier the same day, use `transfer/`: it closes the current
 session with `close_reason=TRANSFER` and opens a successor with
 `opening_amount = counted_amount` for `to_user` (active member with `cash.open`).
+
+**The drawer is counted every day.** A shift still open from a previous
+business day (org timezone) is `is_stale: true` on every session payload, and
+it refuses sales, refunds, cancellations, cash expenses, manual movements and
+handoffs with `409 cash_session_stale` until it is closed. Closing it is always
+allowed. Operations replayed from an offline terminal are accepted anyway —
+they already happened in the store.
+
+A register closed by mistake can be reopened the same day by sending
+`"reopen": true` on `POST /cash/sessions/`; it needs `cash.reopen` (owner and
+manager) and is audited as `cash.reopened`.
 
 ### Expenses
 Operating spend only — rent, payroll, utilities, the delivery paid out of the

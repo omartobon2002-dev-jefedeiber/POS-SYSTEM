@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.core.admin import UnscopedTenantAdmin
+from apps.core.admin import UnscopedRelationsMixin, UnscopedTenantAdmin
 
 from .models import Plan, Subscription, SubscriptionPayment
 
@@ -41,7 +41,7 @@ class SubscriptionAdmin(UnscopedTenantAdmin):
 
 
 @admin.register(SubscriptionPayment)
-class SubscriptionPaymentAdmin(admin.ModelAdmin):
+class SubscriptionPaymentAdmin(UnscopedRelationsMixin, admin.ModelAdmin):
     list_display = (
         "paid_at",
         "organization",

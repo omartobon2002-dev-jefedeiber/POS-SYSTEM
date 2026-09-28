@@ -9,6 +9,12 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")  # noqa: F405
 
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# El chequeo de salud de la plataforma entra por HTTP interno: si se le
+# redirige a HTTPS puede marcar el servicio como caído.
+SECURE_REDIRECT_EXEMPT = [r"^api/v1/health/$"]
+# Dominios HTTPS desde los que se envían formularios (el admin de Django detrás
+# del proxy). Ej: https://api.mitienda.com
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])  # noqa: F405
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000

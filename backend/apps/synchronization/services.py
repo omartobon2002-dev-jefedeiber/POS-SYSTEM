@@ -197,7 +197,9 @@ def _handle_sale_cancel(*, organization, device, operation, user, **_):
         sale = Sale.objects.get(pk=uuid.UUID(str(payload["sale"])))
     except (KeyError, ValueError, TypeError, Sale.DoesNotExist):
         raise InvalidOperation("Unknown or missing sale in the cancel payload.") from None
-    cancelled = SaleService.cancel_sale(sale=sale, user=user, reason=payload.get("reason", ""))
+    cancelled = SaleService.cancel_sale(
+        sale=sale, user=user, reason=payload.get("reason", ""), allow_stale_session=True
+    )
     return {"sale_id": str(cancelled.pk), "status": cancelled.status}
 
 
@@ -215,6 +217,8 @@ def _handle_refund_create(*, organization, device, operation, user, **_):
         reason=data.get("reason", ""),
         cash_register=data.get("cash_register") or device.cash_register,
         occurred_at=data.get("occurred_at") or operation.get("occurred_at"),
+        # Replayed from offline: it already happened in the store.
+        allow_stale_session=True,
     )
     return {"refund_id": str(refund.pk), "number": refund.number, "total": str(refund.total)}
 

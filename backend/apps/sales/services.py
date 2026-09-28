@@ -20,7 +20,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from apps.cash.models import CashMovementType, CashSession
-from apps.cash.services import CashService
+from apps.cash.services import CashService, ensure_not_stale
 from apps.core.audit import record_audit
 from apps.core.enums import PaymentMethod
 from apps.core.exceptions import DomainError, InvalidOperation
@@ -109,7 +109,9 @@ def _build_lines(raw_lines, *, tax_rate: Decimal, allow_price_override: bool = T
     return lines
 
 
-def _resolve_cash_session(*, organization, cash_register, needs_cash: bool) -> CashSession | None:
+def _resolve_cash_session(
+    *, organization, cash_register, needs_cash: bool, allow_stale: bool = False
+) -> CashSession | None:
     """Find the open shift for a register, if the caller supplied one.
 
     If the caller took cash but did not say which register, and the
@@ -136,6 +138,11 @@ def _resolve_cash_session(*, organization, cash_register, needs_cash: bool) -> C
             "This register has no open cash session. Open the register before taking cash.",
             register=str(cash_register.pk),
         )
+    # The drawer is closed every day: a shift left open overnight takes no more
+    # sales until it is counted. Offline replays pass allow_stale - the sale
+    # already happened in the store (same spirit as decision D4).
+    if not allow_stale:
+        ensure_not_stale(session)
     return session
 
 
@@ -205,7 +212,10 @@ class SaleService:
             )
 
         session = _resolve_cash_session(
-            organization=organization, cash_register=cash_register, needs_cash=cash_paid > 0
+            organization=organization,
+            cash_register=cash_register,
+            needs_cash=cash_paid > 0,
+            allow_stale=source == Sale.Source.SYNC,
         )
 
         # The id is minted here rather than by the database so the stock
@@ -327,7 +337,9 @@ class SaleService:
 
     @staticmethod
     @transaction.atomic
-    def cancel_sale(*, sale: Sale, user=None, reason: str = "") -> Sale:
+    def cancel_sale(
+        *, sale: Sale, user=None, reason: str = "", allow_stale_session: bool = False
+    ) -> Sale:
         """Void a whole sale: stock goes back, cash comes out.
 
         Only possible while nothing has been refunded. Once a partial refund
@@ -372,6 +384,8 @@ class SaleService:
         )
         cash_effect = money(cash_in - locked.change_amount)
         if locked.cash_session_id and cash_effect > 0 and locked.cash_session.is_open:
+            if not allow_stale_session:
+                ensure_not_stale(locked.cash_session)
             CashService.record_movement(
                 session=locked.cash_session,
                 movement_type=CashMovementType.REFUND,
@@ -413,6 +427,7 @@ class RefundService:
         reason: str = "",
         cash_register=None,
         occurred_at=None,
+        allow_stale_session: bool = False,
     ) -> Refund:
         """Return units from one sale. Never more than were sold and not yet returned."""
         if not lines:
@@ -480,6 +495,7 @@ class RefundService:
             organization=locked_sale.organization,
             cash_register=cash_register,
             needs_cash=method == PaymentMethod.CASH,
+            allow_stale=allow_stale_session,
         )
 
         refund = Refund.objects.create(

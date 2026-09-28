@@ -1,12 +1,14 @@
 from django.contrib import admin
 
+from apps.core.admin import UnscopedInlineMixin, UnscopedRelationsMixin
+
 from .models import Location, Organization
 
 
-class LocationInline(admin.TabularInline):
+class LocationInline(UnscopedInlineMixin, admin.TabularInline):
     model = Location
     extra = 0
-    fields = ("name", "code", "is_default", "is_active", "address", "city")
+    fields = ("name", "code", "is_default", "is_active", "address", "phone")
     show_change_link = True
 
 
@@ -20,7 +22,7 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 
 @admin.register(Location)
-class LocationAdmin(admin.ModelAdmin):
+class LocationAdmin(UnscopedRelationsMixin, admin.ModelAdmin):
     list_display = ("name", "code", "organization", "is_default", "is_active")
     list_filter = ("is_active", "is_default", "organization")
     search_fields = ("name", "code", "organization__name", "organization__slug")

@@ -11,7 +11,40 @@ from django.contrib import admin
 from .models import AuditLog, DocumentSequence, IdempotencyKey
 
 
-class UnscopedTenantAdmin(admin.ModelAdmin):
+class UnscopedRelationsMixin:
+    """Relation fields in admin forms read through ``all_objects``.
+
+    A foreign key to a tenant-scoped model (e.g. a membership's
+    ``default_location``) builds its choices from the related model's default
+    manager, which refuses to run without an organization context - and the
+    admin has none. Platform operators see every tenant anyway.
+    """
+
+    @staticmethod
+    def _unscoped(db_field, kwargs):
+        related = db_field.remote_field.model
+        if "queryset" not in kwargs and hasattr(related, "all_objects"):
+            kwargs["queryset"] = related.all_objects.all()
+        return kwargs
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        return super().formfield_for_foreignkey(db_field, request, **self._unscoped(db_field, kwargs))
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        return super().formfield_for_manytomany(db_field, request, **self._unscoped(db_field, kwargs))
+
+
+class UnscopedInlineMixin(UnscopedRelationsMixin):
+    """Inline rows of a tenant-scoped model, read without an organization context."""
+
+    def get_queryset(self, request):
+        model = self.model
+        queryset = model.all_objects.all() if hasattr(model, "all_objects") else model._default_manager.all()
+        ordering = self.get_ordering(request)
+        return queryset.order_by(*ordering) if ordering else queryset
+
+
+class UnscopedTenantAdmin(UnscopedRelationsMixin, admin.ModelAdmin):
     """Base for models that inherit ``TenantScopedModel``.
 
     Reads and writes through ``all_objects`` so the platform admin can see

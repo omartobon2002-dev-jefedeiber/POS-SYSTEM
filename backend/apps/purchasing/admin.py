@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from apps.core.admin import UnscopedTenantAdmin
+from apps.core.admin import UnscopedInlineMixin, UnscopedTenantAdmin
 
 from .models import Purchase, PurchaseItem, Supplier
 
 
-class PurchaseItemInline(admin.TabularInline):
+class PurchaseItemInline(UnscopedInlineMixin, admin.TabularInline):
     model = PurchaseItem
     extra = 0
     fields = ("variant", "quantity", "unit_cost", "total_cost")

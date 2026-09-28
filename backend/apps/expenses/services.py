@@ -5,7 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.cash.models import CashMovement, CashMovementType, CashSession
-from apps.cash.services import CashService
+from apps.cash.services import CashService, ensure_not_stale
 from apps.core.audit import record_audit
 from apps.core.enums import PaymentMethod
 from apps.core.exceptions import InvalidOperation
@@ -26,6 +26,7 @@ def open_session_for(*, location, provided=None) -> CashSession | None:
     if provided is not None:
         if not provided.is_open:
             raise InvalidOperation("That cash session is already closed.", session=str(provided.pk))
+        ensure_not_stale(provided)
         return provided
 
     sessions = list(
@@ -37,7 +38,10 @@ def open_session_for(*, location, provided=None) -> CashSession | None:
             "comes out of.",
             open_sessions=[str(session.pk) for session in sessions],
         )
-    return sessions[0] if sessions else None
+    session = sessions[0] if sessions else None
+    # Money out of yesterday's drawer would falsify its closed-day count.
+    ensure_not_stale(session)
+    return session
 
 
 @transaction.atomic

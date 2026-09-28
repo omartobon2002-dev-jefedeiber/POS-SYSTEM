@@ -20,7 +20,7 @@ from .serializers import (
     TransferSessionResultSerializer,
     TransferSessionSerializer,
 )
-from .services import CashService
+from .services import CashService, ensure_not_stale
 
 
 class CashRegisterViewSet(TenantModelViewSet):
@@ -62,13 +62,31 @@ class CashSessionViewSet(
     def create(self, request):
         serializer = OpenSessionSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
+        reopen = serializer.validated_data["reopen"]
+        if reopen and not request.membership.has_capability(caps.CASH_REOPEN):
+            return Response(
+                {
+                    "detail": "Solo el dueño o el gerente pueden reabrir una caja que ya se cerró hoy.",
+                    "code": "permission_denied",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         session = CashService.open_session(
             organization=request.organization,
             register=serializer.validated_data["register"],
             user=request.user,
             opening_amount=serializer.validated_data["opening_amount"],
             notes=serializer.validated_data.get("notes", ""),
+            allow_same_day_reopen=reopen,
         )
+        if reopen:
+            record_audit(
+                organization=request.organization,
+                action="cash.reopened",
+                actor=request.user,
+                obj=session,
+                metadata={"register": str(session.register_id)},
+            )
         return Response(CashSessionSerializer(session).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(request=CloseSessionSerializer, responses={200: CashSessionSerializer})
@@ -133,6 +151,7 @@ class CashSessionViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        ensure_not_stale(session)
         amount = data["amount"]
         if data["movement_type"] == CashMovementType.WITHDRAWAL:
             amount = -amount

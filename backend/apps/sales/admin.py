@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from apps.core.admin import ReadOnlyAdminMixin, UnscopedTenantAdmin
+from apps.core.admin import ReadOnlyAdminMixin, UnscopedInlineMixin, UnscopedTenantAdmin
 
 from .models import Payment, Refund, RefundItem, Sale, SaleItem
 
 
-class SaleItemInline(admin.TabularInline):
+class SaleItemInline(UnscopedInlineMixin, admin.TabularInline):
     model = SaleItem
     extra = 0
     fields = (
@@ -26,7 +26,7 @@ class SaleItemInline(admin.TabularInline):
         return False
 
 
-class PaymentInline(admin.TabularInline):
+class PaymentInline(UnscopedInlineMixin, admin.TabularInline):
     model = Payment
     extra = 0
     fields = ("method", "amount", "reference", "created_at")
@@ -37,7 +37,7 @@ class PaymentInline(admin.TabularInline):
         return False
 
 
-class RefundItemInline(admin.TabularInline):
+class RefundItemInline(UnscopedInlineMixin, admin.TabularInline):
     model = RefundItem
     extra = 0
     fields = ("sale_item", "quantity", "amount")

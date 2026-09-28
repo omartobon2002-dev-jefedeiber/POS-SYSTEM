@@ -28,6 +28,22 @@ class RegisterAlreadyUsedToday(InvalidOperation):
     status_code = 409
 
 
+class CashSessionStale(InvalidOperation):
+    """The open shift belongs to a previous business day.
+
+    The drawer is counted and closed every day: a shift left open overnight
+    must be closed (arqueo) before it takes any more money, otherwise today's
+    sales would land in yesterday's count.
+    """
+
+    default_message = (
+        "This register still has a shift open from a previous day. Close it (arqueo) "
+        "before selling or moving cash."
+    )
+    code = "cash_session_stale"
+    status_code = 409
+
+
 def local_day_bounds(organization) -> tuple[datetime, datetime]:
     """Start/end of the organization's local calendar day as aware datetimes."""
     tz_name = getattr(organization, "timezone", None) or "America/Bogota"
@@ -38,6 +54,23 @@ def local_day_bounds(organization) -> tuple[datetime, datetime]:
     now_local = timezone.now().astimezone(tz)
     start = datetime.combine(now_local.date(), time.min, tzinfo=tz)
     return start, start + timedelta(days=1)
+
+
+def is_stale(session: CashSession) -> bool:
+    """An open shift opened before today's local business day (org timezone)."""
+    if not session.is_open:
+        return False
+    day_start, _ = local_day_bounds(session.organization)
+    return session.opened_at < day_start
+
+
+def ensure_not_stale(session: CashSession | None) -> None:
+    if session is not None and is_stale(session):
+        raise CashSessionStale(
+            session=str(session.pk),
+            register=str(session.register_id),
+            opened_at=session.opened_at.isoformat(),
+        )
 
 
 class CashService:
@@ -209,6 +242,8 @@ class CashService:
         locked = CashSession.objects.select_for_update().get(pk=session.pk)
         if not locked.is_open:
             raise InvalidOperation("This session is already closed.", session=str(locked.pk))
+        # A handoff continues the same day's drawer; yesterday's must be closed.
+        ensure_not_stale(locked)
 
         membership = (
             Membership.objects.filter(

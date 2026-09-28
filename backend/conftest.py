@@ -27,6 +27,15 @@ from apps.organizations.services import provision_organization
 User = get_user_model()
 
 
+@pytest.fixture(autouse=True)
+def _fresh_cache():
+    """Rate-limit counters live in the cache; don't let one test throttle the next."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+
+
 @pytest.fixture
 def make_identity(db):
     """A person, with no business yet."""

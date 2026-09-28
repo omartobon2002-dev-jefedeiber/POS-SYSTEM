@@ -96,6 +96,15 @@ DATABASES = {
     }
 }
 
+# Plataformas como Seenode/Render/Railway entregan la conexión como una sola
+# DATABASE_URL (postgres://usuario:clave@host:puerto/base). Si existe, manda.
+if env("DATABASE_URL", default=""):
+    DATABASES["default"] = {
+        **env.db("DATABASE_URL"),
+        "ATOMIC_REQUESTS": False,
+        "CONN_MAX_AGE": env.int("DB_CONN_MAX_AGE", default=60),
+    }
+
 AUTH_USER_MODEL = "accounts.User"
 
 # El correo es la identidad global, así que `ModelBackend` podría resolverlo,
@@ -124,7 +133,8 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+# En producción apúntalo a un volumen persistente (p. ej. /data/media).
+MEDIA_ROOT = env("MEDIA_ROOT", default=str(BASE_DIR / "media"))
 # Uploads are bounded so a tenant cannot exhaust worker memory with a single request.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
@@ -132,11 +142,15 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+# Redis es opcional: con REDIS_URL vacío se usa caché en memoria (un solo
+# proceso). Sirve para arrancar en una plataforma sin Redis; con varios
+# workers conviene Redis para que los límites de intentos se compartan.
 CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": REDIS_URL,
-    }
+    "default": (
+        {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": REDIS_URL}
+        if REDIS_URL
+        else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    )
 }
 
 REST_FRAMEWORK = {

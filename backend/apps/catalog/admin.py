@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from apps.core.admin import UnscopedTenantAdmin
+from apps.core.admin import UnscopedInlineMixin, UnscopedTenantAdmin
 
 from .models import Brand, Category, Product, ProductVariant
 
 
-class ProductVariantInline(admin.TabularInline):
+class ProductVariantInline(UnscopedInlineMixin, admin.TabularInline):
     model = ProductVariant
     extra = 0
     fields = ("sku", "barcode", "size", "color", "price", "is_active")

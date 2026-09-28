@@ -55,6 +55,8 @@ CASH_READ = "cash.read"
 CASH_OPEN = "cash.open"
 CASH_CLOSE = "cash.close"
 CASH_MOVEMENT = "cash.movement"
+# Reopening a register the same day after a normal close (a mistaken close).
+CASH_REOPEN = "cash.reopen"
 
 # Reporting / subscription / sync
 REPORTS_READ = "reports.read"
@@ -93,6 +95,7 @@ _MANAGER_CAPABILITIES = frozenset(
         CASH_OPEN,
         CASH_CLOSE,
         CASH_MOVEMENT,
+        CASH_REOPEN,
         REPORTS_READ,
         SUBSCRIPTION_READ,
         SYNC_PUSH,
